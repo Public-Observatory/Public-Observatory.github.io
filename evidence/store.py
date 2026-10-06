@@ -5,7 +5,7 @@ Layout of a store (``.evidence/``)::
     objects/<id[:2]>/<id[2:]>.json   questions, claims, reviews, withdrawals, leases, releases,
                                      signatures (immutable)
     blobs/<hash[:2]>/<hash[2:]>      evidence files (immutable)
-    config.json                      author, signing key, trusted keys, remotes (local, never shared)
+    config.json                      author, signing key, trusted keys, remotes, limits, sandbox (local)
     cache/                           verified signatures (local, can be deleted)
 
 Every object is identified by the SHA-256 of its canonical JSON, so two stores merge by taking
@@ -24,11 +24,13 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import io
 import json
 import math
 import os
 import platform
 import re
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -60,6 +62,11 @@ TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00")
 LEASE_LIMIT = timedelta(days=7)
 # `search` drops matches scoring below this fraction of the best, which share only common words.
 SEARCH_CUTOFF = 0.3
+# The most one pull may fetch, in bytes: one object, one evidence file, and everything together. A
+# source need not be trusted, and without bounds it could fill memory or disk. The defaults leave
+# room for datasets; `limits` in config.json and the flags of `ev pull` override them.
+LIMITS = {"object": 2 ** 20, "blob": 2 ** 28, "total": 2 ** 32}
+CHUNK = 2 ** 16
 
 # A claim may carry the value it gives as its answer, either exact or a measured quantity:
 #     {"exact": 168}   {"exact": true}   {"exact": "Riemann"}
@@ -247,6 +254,16 @@ def plain_name(name) -> bool:
     """Whether a file name stays inside the directory it is written to, on any platform."""
     return (isinstance(name, str) and name not in ("", ".", "..", ".tmp")
             and not any(c in name for c in "/\\\0"))
+
+
+def parse_size(size) -> int:
+    """Bytes from a count or a text such as `256M` or `4G` (binary multiples)."""
+    if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+        return size
+    m = re.fullmatch(r"(\d+)\s*([KMGT]?)(?:i?B)?", str(size).strip(), re.IGNORECASE)
+    if not m:
+        raise EvidenceError(f"not a size: {size!r} (a number of bytes, optionally with K, M, G or T)")
+    return int(m.group(1)) * 1024 ** " KMGT".index(m.group(2).upper() or " ")
 
 
 def canonical(obj: dict) -> bytes:
@@ -445,6 +462,13 @@ class Store:
         if keyfile := self.keyfile():
             author["key"] = signing.public_key(keyfile)
         return author
+
+    def limits(self, **overrides) -> dict[str, int]:
+        """The bounds on one pull: the defaults, then `limits` in config.json, then `overrides`."""
+        given = {**self.config().get("limits", {}), **{k: v for k, v in overrides.items() if v is not None}}
+        if unknown := sorted(set(given) - set(LIMITS)):
+            raise EvidenceError(f"unknown limit(s) {unknown}; the limits are {sorted(LIMITS)}")
+        return {**LIMITS, **{k: parse_size(v) for k, v in given.items()}}
 
     def trust(self) -> dict[str, str]:
         """Public keys this store trusts, with the name each stands for; our own key among them."""
@@ -678,14 +702,16 @@ class Store:
             raise EvidenceError("refusing to run another lab's command without a sandbox "
                                 "(set EV_SANDBOX=docker, or pass --unsafe if you trust it)")
         env = {**environment(), "sandbox": mode}
+        # The command must not read this store's key or settings, nor anything the user names here.
+        policy = {"read": self.config().get("sandbox_read", []), "hide": [self.root, *filter(None, [self.keyfile()])]}
         with tempfile.TemporaryDirectory() as work:
             self.checkout(claim, Path(work))
             for c in setup:
-                code, output = sandbox.run(c, work, timeout, mode, network=True)
+                code, output = sandbox.run(c, work, timeout, mode, network=True, **policy)
                 if code != 0:
                     return self.review(claim, "inconclusive", f"setup `{c}` failed (exit {code})",
                                        note=output[-2000:], environment=env), "inconclusive"
-            code, output = sandbox.run(cmds[0], work, timeout, mode)
+            code, output = sandbox.run(cmds[0], work, timeout, mode, **policy)
         if code == 0:
             verdict = "reproduced"
         elif code is None or code in CANNOT_RUN or sandbox.denied(mode, output):
@@ -933,20 +959,48 @@ class Store:
     def read(self, kind: str, h: str) -> bytes:
         return self._path(kind, h).read_bytes()
 
-    def pull(self, source) -> int:
-        """Copy every object and blob we lack from a source, checking hashes and signatures.
+    def open(self, kind: str, h: str):
+        return self._path(kind, h).open("rb")
 
-        Nothing is written unless everything checks: a corrupt or forged object aborts the pull.
+    def pull(self, source, limits: dict | None = None) -> int:
+        """Copy the objects we lack from a source, and the evidence files they refer to.
+
+        Every hash, the structure of every object and every signature is checked, and nothing is
+        written unless all pass: a corrupt or forged object aborts the pull. Blobs are fetched only
+        once the objects have passed, and only those a claim refers to, so a source cannot make us
+        store files nothing uses. Each is streamed to a staging directory while it is hashed. What a
+        source may send is bounded by `limits` (see LIMITS); exceeding a bound also aborts the pull.
         """
+        limits = {**self.limits(), **(limits or {})}
+        left = limits["total"]
+
+        def fetch(kind: str, h: str, out) -> None:
+            """Copy one file from the source into `out`, refusing too many bytes or a wrong hash."""
+            nonlocal left
+            what = kind[:-1]
+            cap, sha, n = min(limits[what], left), hashlib.sha256(), 0
+            with source.open(kind, h) as f:
+                while chunk := f.read(min(CHUNK, cap + 1 - n)):
+                    n += len(chunk)
+                    if n > cap:
+                        bound = (f"the limit of {limits[what]} bytes for one {what}" if cap == limits[what]
+                                 else f"the limit of {limits['total']} bytes for one pull")
+                        raise EvidenceError(f"{what} {h} in {source.name} exceeds {bound} "
+                                            f"(raise it with `ev pull --max-{what}` or `limits` in config.json)")
+                    sha.update(chunk)
+                    out.write(chunk)
+            if sha.hexdigest() != h:
+                raise EvidenceError(f"corrupt {what} in {source.name}: {h}")
+            left -= n
+
         listing = source.listing()
         have = set(self._load())
         incoming = {}
         for h in listing["objects"]:
-            if h in have or not HEX.fullmatch(h):
+            if h in have or h in incoming or not HEX.fullmatch(h):
                 continue
-            data = source.read("objects", h)
-            if digest(data) != h:
-                raise EvidenceError(f"corrupt object in {source.name}: {h}")
+            fetch("objects", h, out := io.BytesIO())
+            data = out.getvalue()
             try:
                 obj = json.loads(data)
                 # Only the canonical encoding is stored, so any other would land under a wrong name.
@@ -959,17 +1013,24 @@ class Store:
         if forged := self.unsigned(incoming):
             raise EvidenceError(f"{len(forged)} object(s) in {source.name} lack a valid signature by "
                                 f"the key they name, e.g. {forged[0]}")
-        blobs = {}
-        for h in listing["blobs"]:
-            if HEX.fullmatch(h) and not self._path("blobs", h).exists():
-                data = source.read("blobs", h)
-                if digest(data) != h:
-                    raise EvidenceError(f"corrupt blob in {source.name}: {h}")
-                blobs[h] = data
-        for h, data in blobs.items():
-            self._write("blobs", h, data)
-        for h, obj in incoming.items():
-            self._write("objects", h, canonical(obj))
+        # Files referred to by the incoming claims, and by ours if an earlier copy lacked them.
+        referred = {e.get("blob") for o in (*incoming.values(), *self._load().values()) if o.get("type") == "claim"
+                    for e in o.get("evidence", []) if isinstance(e, dict) and e.get("kind") == "file"}
+        offered = {h for h in listing["blobs"] if isinstance(h, str) and HEX.fullmatch(h)}
+        blobs = sorted(h for h in referred & offered if not self._path("blobs", h).exists())
+        staging = Path(tempfile.mkdtemp(prefix="pull-", suffix=".tmp", dir=self.root))
+        try:
+            for h in blobs:
+                with (staging / h).open("wb") as out:
+                    fetch("blobs", h, out)
+            for h in blobs:
+                path = self._path("blobs", h)
+                path.parent.mkdir(exist_ok=True)
+                (staging / h).replace(path)
+            for h, obj in incoming.items():
+                self._write("objects", h, canonical(obj))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
         self._objects = self._graph = None
         return len(incoming) + len(blobs)
 

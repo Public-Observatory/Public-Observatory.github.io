@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shutil
 import sys
@@ -14,7 +15,7 @@ from . import batch, report, sandbox, signing
 from .guide import GUIDE
 from .palomar import PALOMAR_ID, Palomar
 from .remote import open_source, serve
-from .store import KINDS, STATES, VERDICTS, EvidenceError, Store, format_value
+from .store import KINDS, LIMITS, STATES, VERDICTS, EvidenceError, Store, format_value
 from .store import now as store_now
 
 # Lines of a command's output that `ev verify` prints; the review keeps its last 2000 characters.
@@ -395,9 +396,10 @@ def cmd_pull(args) -> None:
     specs = args.sources or list(remotes.values())
     if not specs:
         raise EvidenceError("nothing to pull: name a source or add one with `ev remote add`")
+    limits = store.limits(object=args.max_object, blob=args.max_blob, total=args.max_total)
     for spec in specs:
         with open_source(remotes.get(spec, spec)) as source:
-            print(f"pulled {store.pull(source)} new object(s) from {remotes.get(spec, spec)}")
+            print(f"pulled {store.pull(source, limits)} new object(s) from {remotes.get(spec, spec)}")
 
 
 def cmd_push(args) -> None:
@@ -451,7 +453,7 @@ def cmd_serve(args) -> None:
     if args.export:
         out = Path(args.export)
         target = Store.init(out / "_", {})  # a scratch store to receive the public files
-        n = target.pull(store)
+        n = target.pull(store, dict.fromkeys(LIMITS, math.inf))  # our own store: no bounds
         for kind in ("objects", "blobs"):
             dst = out / kind
             if dst.exists():
@@ -627,6 +629,9 @@ def parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("pull", help="merge in other stores: paths, URLs, git repositories or remote names")
     s.add_argument("sources", nargs="*", help="default: every remote")
+    s.add_argument("--max-object", metavar="SIZE", help=f"largest object accepted (default {LIMITS['object'] >> 20}M)")
+    s.add_argument("--max-blob", metavar="SIZE", help=f"largest evidence file accepted (default {LIMITS['blob'] >> 20}M)")
+    s.add_argument("--max-total", metavar="SIZE", help=f"most fetched from one source (default {LIMITS['total'] >> 30}G)")
     s.set_defaults(func=cmd_pull)
 
     s = sub.add_parser("push", help="copy our objects into other stores on disk")

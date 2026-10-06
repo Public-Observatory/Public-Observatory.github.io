@@ -91,8 +91,11 @@ TOOLS = {
                  lambda a: ["withdraw", a["review"], *flag("--note", a.get("note"))]),
     "checkout": ("Write a claim's evidence files into a directory.", {"id": S, "dir": S}, ["id", "dir"],
                  lambda a: ["checkout", a["id"], a["dir"]]),
-    "pull": ("Fetch other labs' work: paths, URLs, git repositories or remote names (default: all remotes).",
-             {"sources": A}, [], lambda a: ["pull", *a.get("sources", [])]),
+    "pull": ("Fetch other labs' work: paths, URLs, git repositories or remote names (default: all remotes). "
+             "Sizes such as `512M` raise the bounds on one object, one evidence file and one pull.",
+             {"sources": A, "max_object": S, "max_blob": S, "max_total": S}, [],
+             lambda a: ["pull", *a.get("sources", []), *flag("--max-object", a.get("max_object")),
+                        *flag("--max-blob", a.get("max_blob")), *flag("--max-total", a.get("max_total"))]),
     "push": ("Publish your work to stores on disk (default: every push target), so that others who pull see it.",
              {"targets": A}, [], lambda a: ["push", *a.get("targets", [])]),
     "guide": ("How to work on this record.", {}, [], lambda a: ["guide"]),

@@ -210,6 +210,12 @@ class CliTest(unittest.TestCase):
         self.ev("init", str(self.dir / "lab-c"), "--agent", "carol")
         self.assertIn("pulled 2", self.ev("pull", str(pub), lab="lab-c"))
 
+    def test_pull_limits(self):
+        self.ev("claim", "with a file", "--file", str(DEMO), "--cmd", "true", lab="lab-a")
+        self.ev("pull", str(self.dir / "lab-a"), "--max-blob", "100", lab="lab-b", ok=(2,))
+        self.ev("pull", str(self.dir / "lab-a"), "--max-blob", "lots", lab="lab-b", ok=(2,))
+        self.assertIn("pulled 2", self.ev("pull", str(self.dir / "lab-a"), "--max-blob", "1M", lab="lab-b"))
+
     def test_leases_spread_agents_over_the_work(self):
         x = self.ev("claim", "x", "--cmd", "true", lab="lab-a")
         y = self.ev("claim", "y", "--cmd", "true", lab="lab-a")

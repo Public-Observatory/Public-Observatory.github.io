@@ -24,6 +24,7 @@ ev review 3baae1d9 refuted --method "counterexample at n = 7"
 ev withdraw 81bc03                                                     # take back your own review
 ev lease 3baae1d9 --for 2h --note "re-running at 10^8"                 # tell others' `ev todo` to look elsewhere (pushed)
 ev release 3baae1d9                                                    # give the lease up early
+ev apply run.jsonl                                                     # a whole run at once, all or nothing
 ```
 
 ## Reading
@@ -81,6 +82,24 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 An agent's loop is: `ev pull` and `ev check`; `ev search` before any substantial attempt, to avoid repeating a known dead end; `ev todo --json` to pick the step that strengthens the most of the record; `ev pull` again and `ev lease` before long work, so that agents sharing the record do not all take the same item (a lease is invisible to labs that have not pulled it, so `ev lease` pushes to the push targets); `ev claim`, including negative results, when done. `ev guide` gives the full instructions.
 
 `ev mcp` serves the store over the Model Context Protocol (stdio), with tools for searching, choosing work, asking, claiming, verifying and reviewing, and with the guide as its instructions. For example, `claude mcp add evidence -- ev mcp` from the directory of a store.
+
+## Harnesses
+
+A harness need not learn the commands one by one: it hands over a run as JSON Lines, one question, claim or review per line, and `ev apply FILE` (or `-` for standard input) records it.
+
+```json
+{"ask": "How many primes are below 1000?", "ref": "q1", "parents": ["4c1d07"]}
+{"claim": "There are 168 primes below 1000.", "ref": "c1", "answers": ["q1"], "value": 168, "files": ["primes.py"], "cmd": "python3 primes.py 1000 168", "created": "2026-10-06T12:00:00Z"}
+{"claim": "Trial division is too slow beyond 10^7.", "kind": "negative", "depends_on": "c1", "notes": "timed out at 600s"}
+{"review": "3baae1d9", "verdict": "reproduced", "method": "re-ran on a second machine"}
+```
+
+- **Fields.** Every line names exactly one of `ask`, `claim` and `review`, and may give a `ref` and a `created` time (ISO 8601 with a zone). A question takes `parents`; a claim takes `kind`, `answers`, `depends_on`, `files`, `cmd`, `setup`, `notes` and `value`; a review takes `verdict` and `method` (both required), `note` and `superseded_by`. A list may be given as a single string. A value is an integer, `true` or `false`, a decimal number (its digits are kept as written), a string as `ev claim --value` reads it, or a value object as stored. Unknown fields are refused, so that a misspelt field is not silently lost. Files are read relative to the batch file, or to the working directory for standard input.
+- **References.** A reference is the `ref` of an earlier line, which takes precedence, or else the id of an object on record or a unique prefix of it of at least six hexadecimal digits.
+- **Atomicity.** Every line is checked and recorded with all writes held back; if any line fails, nothing is written, the error names the line, and the exit code is 2. `--dry-run` checks the batch and reports the ids it would record. `--json` maps each ref to its id and says which objects are new.
+- **Idempotence.** An id is a function of the content, the author and the time of creation. A line that gives `created` yields the same id whenever and wherever the same author applies it. A line without `created` takes one time shared by the batch, and if the same author already recorded an object that differs from it only in its time, the line resolves to that object. Hence re-applying a batch records nothing new, but two labs that apply a batch without times obtain different ids; a harness that wants ids to agree everywhere gives `created`.
+
+`contrib/runs.py` is a worked example of an adapter: it turns a directory of runs, each with a `result.json` holding a hypothesis, metric, value, success flag and command, into such a batch, so that `python3 contrib/runs.py RUNS | ev apply -` records successes as claims and failures as negative claims that `ev search` finds. Over MCP the same batch is the tool `apply`, with the lines as an array.
 
 ## Palomar
 

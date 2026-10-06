@@ -71,6 +71,16 @@ class McpTest(unittest.TestCase):
         self.assertFalse(self.tool("release", id=parent)[1])
         self.assertEqual(json.loads(self.tool("todo")[0])[0]["leased"], [])
 
+        applied, err = self.tool("apply", lines=[{"ask": "Is 91 prime?", "ref": "q"},
+                                                 {"claim": "91 = 7 * 13 is not prime.", "answers": ["q"],
+                                                  "value": False, "ref": "c"}])
+        self.assertFalse(err, applied)
+        refs = json.loads(applied)["refs"]
+        self.assertEqual(json.loads(self.tool("show", id=refs["c"])[0])["answers"], [refs["q"]])
+        text, err = self.tool("apply", lines=[{"claim": "x", "depends_on": ["nowhere"]}])
+        self.assertTrue(err)
+        self.assertIn("line 1", text)
+
         text, err = self.tool("show", id="nope")
         self.assertTrue(err)
         self.assertIn("unknown id", text)

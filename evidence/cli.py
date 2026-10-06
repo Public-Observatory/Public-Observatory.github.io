@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import report, sandbox, signing
+from . import batch, report, sandbox, signing
 from .guide import GUIDE
 from .palomar import PALOMAR_ID, Palomar
 from .remote import open_source, serve
@@ -83,6 +83,30 @@ def cmd_claim(args) -> None:
 def cmd_review(args) -> None:
     store = Store.find()
     print(store.review(args.id, args.verdict, args.method, note=args.note, superseded_by=args.by))
+
+
+def cmd_apply(args) -> None:
+    store = Store.find()
+    if args.lines is not None:
+        lines, base = batch.read_array(args.lines), Path.cwd()
+    elif args.file == "-":
+        lines, base = batch.read(sys.stdin.read()), Path.cwd()
+    elif args.file:
+        path = Path(args.file)
+        try:
+            lines, base = batch.read(path.read_text()), path.parent
+        except OSError as e:
+            raise EvidenceError(f"cannot read {args.file}: {e.strerror}") from None
+    else:
+        raise EvidenceError("name a JSON Lines file, or - for standard input")
+    out = batch.apply(store, lines, base, dry_run=args.dry_run)
+    new = sum(o["new"] for o in out)
+    data = {"refs": {o["ref"]: o["id"] for o in out if "ref" in o}, "objects": out, "new": new,
+            "dry_run": args.dry_run}
+    text = [f"{o['line']:>4}  {o['type']:<8} {short(o['id'])}  {'new' if o['new'] else 'on record'}"
+            + (f"  {o['ref']}" if "ref" in o else "") for o in out]
+    text.append(f"{'would record' if args.dry_run else 'recorded'} {new} new object(s) from {len(out)} line(s)")
+    emit(args, data, "\n".join(text))
 
 
 def cmd_withdraw(args) -> None:
@@ -520,6 +544,13 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--note", default="")
     s.add_argument("--by", help="the superseding claim")
     s.set_defaults(func=cmd_review)
+
+    s = sub.add_parser("apply", parents=[js], help="record a batch of questions, claims and reviews "
+                       "from JSON Lines, all or nothing (see `ev guide`)")
+    s.add_argument("file", nargs="?", help="JSON Lines file, or - for standard input")
+    s.add_argument("--lines", help=argparse.SUPPRESS)  # the batch as one JSON array, for `ev mcp`
+    s.add_argument("--dry-run", action="store_true", help="check the batch and report ids; write nothing")
+    s.set_defaults(func=cmd_apply)
 
     s = sub.add_parser("withdraw", help="take back one of your own reviews")
     s.add_argument("review")

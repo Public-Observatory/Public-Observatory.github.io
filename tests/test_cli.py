@@ -278,6 +278,135 @@ class CliTest(unittest.TestCase):
         self.assertIn("✔lab-c", self.ev("log", lab="lab-a"))
         self.assertEqual(self.ev("fsck", lab="lab-a"), "ok")
 
+    # ------------------------------------------------------------------ apply
+
+    def batch(self, lines, name="batch.jsonl"):
+        run = self.dir / "run"
+        run.mkdir(exist_ok=True)
+        path = run / name
+        path.write_text("".join((l if isinstance(l, str) else json.dumps(l)) + "\n" for l in lines))
+        return str(path)
+
+    def fails(self, *argv, lab):
+        os.environ["EV_DIR"] = str(self.dir / lab / ".evidence")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            self.assertEqual(main(list(argv)), 2)
+        return err.getvalue()
+
+    def count(self, lab):
+        return len(list((self.dir / lab / ".evidence" / "objects").glob("*/*.json")))
+
+    def test_apply_resolves_local_refs_and_ids_on_record(self):
+        old = self.ev("claim", "The sieve of Eratosthenes is correct.", lab="lab-a")
+        (self.dir / "run").mkdir()
+        (self.dir / "run" / "primes.py").write_bytes(DEMO.read_bytes())
+        path = self.batch([
+            {"ask": "How dense are the primes?", "ref": "q0"},
+            {"ask": "How many primes are below 1000?", "ref": "q1", "parents": "q0"},
+            "",
+            {"claim": "There are 168 primes below 1000.", "ref": "c1", "answers": ["q1"], "value": 168,
+             "files": ["primes.py"], "cmd": "python3 primes.py 1000 168", "depends_on": [old[:8]]},
+            '{"claim": "The density near 1000 is 0.168.", "ref": "c2", "depends_on": "c1", "value": 0.1680}',
+            {"claim": "Trial division is too slow beyond 10^7.", "kind": "negative", "notes": "timed out"},
+            {"review": "c1", "verdict": "reproduced", "method": "counted by hand", "ref": "r1"},
+        ])
+        out = self.js("apply", path, lab="lab-a")
+        self.assertEqual(sorted(out["refs"]), ["c1", "c2", "q0", "q1", "r1"])
+        self.assertEqual([o["line"] for o in out["objects"]], [1, 2, 4, 5, 6, 7])
+        self.assertEqual(out["new"], 6)
+        ids = out["refs"]
+        c1 = self.js("show", ids["c1"], lab="lab-a")
+        self.assertEqual((c1["answers"], c1["depends_on"], c1["value"]), ([ids["q1"]], [old], {"exact": 168}))
+        self.assertEqual(c1["status"], "reproduced")
+        self.assertEqual(self.js("show", ids["c2"], lab="lab-a")["value"], {"quantity": "0.1680"})
+        self.assertEqual(self.js("show", ids["q1"], lab="lab-a")["parents"], [ids["q0"]])
+        self.ev("verify", ids["c1"], lab="lab-a")  # the file was found next to the batch
+        self.assertEqual(self.ev("fsck", lab="lab-a"), "ok")
+        self.assertIn("recorded 0 new object(s) from 6 line(s)", self.ev("apply", path, lab="lab-a"))
+
+    def test_apply_is_all_or_nothing(self):
+        good = [{"ask": "Q?", "ref": "q"}, {"claim": "A.", "ref": "c", "answers": "q"}]
+        bad = [{"claim": "B.", "depends_on": "nowhere"},
+               {"claim": "B.", "depends_on": "q"},                          # a question, not a claim
+               {"claim": "B.", "depends_on": "later"},
+               {"claim": "B.", "files": ["missing.py"]},
+               {"claim": "B.", "value": "9.81 ± x"},
+               {"claim": "B.", "kind": "rumour"},
+               {"claim": "B.", "dep": ["c"]},                               # a misspelt field
+               {"claim": "B.", "created": "yesterday"},
+               {"ask": "B?", "claim": "B."},
+               {"review": "c", "verdict": "refuted"},                       # no method
+               {"review": "c", "verdict": "superseded", "method": "m"},     # by what?
+               {"ask": "Q again?", "ref": "q"},                             # a ref used twice
+               ["not", "an", "object"],
+               '{"ask": "unterminated',
+               ]
+        before = self.count("lab-a")
+        for line in bad:
+            err = self.fails("apply", self.batch(good + [line, {"claim": "C.", "ref": "later"}]), lab="lab-a")
+            self.assertIn("line 3:", err, line)
+            self.assertEqual(self.count("lab-a"), before, line)
+        self.fails("apply", str(self.dir / "nowhere.jsonl"), lab="lab-a")
+        dry = self.js("apply", self.batch(good), "--dry-run", lab="lab-a")
+        self.assertEqual((dry["dry_run"], dry["new"], self.count("lab-a")), (True, 2, before))
+        self.assertEqual(self.js("apply", self.batch(good), lab="lab-a")["new"], 2)
+
+    def test_apply_is_deterministic_and_idempotent(self):
+        lines = [{"ask": "How many primes are below 100?", "ref": "q", "created": "2026-10-01T12:00:00Z"},
+                 {"claim": "There are 25.", "ref": "c", "answers": "q", "value": 25,
+                  "created": "2026-10-01T13:00:00.5+01:00"}]
+        first = self.js("apply", self.batch(lines), lab="lab-a")
+        self.assertEqual(self.js("show", first["refs"]["c"], lab="lab-a")["created"], "2026-10-01T12:00:00+00:00")
+        again = self.js("apply", self.batch(lines), lab="lab-a")
+        self.assertEqual((again["refs"], again["new"]), (first["refs"], 0))
+        # Another lab applying the same run as the same author obtains the same ids.
+        os.environ.update(EV_AGENT="alice", EV_LAB="lab-a")
+        self.assertEqual(self.js("apply", self.batch(lines), lab="lab-b")["refs"], first["refs"])
+        del os.environ["EV_AGENT"], os.environ["EV_LAB"]
+
+        # A line without a time resolves to an object on record that differs from it only in time.
+        untimed = [{k: v for k, v in l.items() if k != "created"} for l in lines]
+        self.assertEqual(self.js("apply", self.batch(untimed), lab="lab-a")["new"], 0)
+        # So re-applying an untimed batch in one store records nothing new.
+        untimed[0]["ask"] = "How many primes are below 200?"
+        one = self.js("apply", self.batch(untimed), lab="lab-a")
+        self.assertEqual(one["new"], 2)
+        before = self.count("lab-a")
+        two = self.js("apply", self.batch(untimed), lab="lab-a")
+        self.assertEqual((two["refs"], two["new"], self.count("lab-a")), (one["refs"], 0, before))
+
+    def test_apply_reads_standard_input(self):
+        import sys
+        stdin = sys.stdin
+        sys.stdin = io.StringIO(json.dumps({"ask": "From a pipe?", "ref": "q"}) + "\n")
+        try:
+            out = self.js("apply", "-", lab="lab-a")
+        finally:
+            sys.stdin = stdin
+        self.assertEqual(self.js("show", out["refs"]["q"], lab="lab-a")["text"], "From a pipe?")
+
+    def test_failed_runs_become_negative_claims_that_search_finds(self):
+        import subprocess
+        import sys
+        runs = self.dir / "runs"
+        for name, hyp, value, ok in (("r1", "Dropout 0.1 lowers validation loss below 2.4.", 2.31, True),
+                                     ("r2", "A cosine schedule lowers validation loss below 2.4.", 2.51, False)):
+            (runs / name).mkdir(parents=True)
+            (runs / name / "result.json").write_text(json.dumps(
+                {"hypothesis": hyp, "metric": "val_loss", "value": value, "success": ok,
+                 "command": f"python3 train.py --run {name}", "created": "2026-10-01T09:00:00Z"}))
+        adapter = Path(__file__).resolve().parent.parent / "contrib" / "runs.py"
+        lines = subprocess.run([sys.executable, str(adapter), str(runs)], capture_output=True, text=True,
+                               check=True).stdout
+        out = self.js("apply", self.batch(lines.splitlines(), "runs.jsonl"), lab="lab-a")
+        hits = self.js("search", "cosine schedule", lab="lab-a")
+        self.assertEqual((hits[0]["id"], hits[0]["kind"]), (out["refs"]["r2"], "negative"))
+        self.assertEqual(hits[0]["value"], {"quantity": "2.51"})
+        shown = self.js("show", out["refs"]["r1"], lab="lab-a")
+        self.assertEqual((shown["kind"], [e["name"] for e in shown["evidence"] if e["kind"] == "file"]),
+                         ("result", ["result.json"]))
+
 
 if __name__ == "__main__":
     unittest.main()

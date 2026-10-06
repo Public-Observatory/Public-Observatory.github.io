@@ -22,6 +22,7 @@ explicitly, so that every function here remains a function of its arguments and 
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -260,6 +261,18 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def utc(text: str) -> str:
+    """An ISO 8601 time with its zone, in the form `now` writes. Fractions of a second are dropped
+    before parsing, since Python 3.10 reads only some of their forms."""
+    try:
+        t = datetime.fromisoformat(re.sub(r"(:\d\d)[.,]\d+", r"\1", text.replace("Z", "+00:00"), count=1))
+        if t.tzinfo is not None:
+            return t.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    except (AttributeError, ValueError, OverflowError):
+        pass
+    raise EvidenceError(f"not an ISO 8601 time with a zone, e.g. 2026-10-06T12:00:00+00:00: {text!r}")
+
+
 def timestamp(text) -> datetime | None:
     """A timestamp in the form `now` writes, or None."""
     if not (isinstance(text, str) and TIME.fullmatch(text)):
@@ -277,6 +290,15 @@ def identity(author: dict) -> str:
         if author.get(k):
             return f"{k}:{author[k]}"
     return ""
+
+
+def stamp(created: str | None) -> str:
+    return now() if created is None else utc(created)
+
+
+def twin_key(obj: dict) -> bytes:
+    """An object without its time of creation, for finding a twin recorded at another time."""
+    return canonical({k: v for k, v in obj.items() if k != "created"})
 
 
 def creator(obj: dict) -> dict:
@@ -371,6 +393,8 @@ class Store:
         self.name = str(self.root)
         self._objects: dict[str, dict] | None = None
         self._graph: Graph | None = None
+        self._twins: dict[bytes, str] | None = None
+        self._pending: dict[tuple[str, str], bytes] | None = None  # writes held back by `staged`
 
     # ------------------------------------------------------------------ setup
 
@@ -442,6 +466,8 @@ class Store:
         if self._objects is not None and h not in self._objects:
             self._objects[h] = json.loads(data)
             self._graph = None
+            if self._twins is not None:
+                self._twins.setdefault(twin_key(self._objects[h]), h)
         return h
 
     def put_blob(self, data: bytes) -> str:
@@ -450,6 +476,9 @@ class Store:
         return h
 
     def _write(self, kind: str, h: str, data: bytes) -> None:
+        if self._pending is not None:
+            self._pending[(kind, h)] = data
+            return
         path = self._path(kind, h)
         if not path.exists():
             path.parent.mkdir(exist_ok=True)
@@ -458,8 +487,41 @@ class Store:
             tmp.write_bytes(data)
             tmp.replace(path)
 
-    def _record(self, obj: dict) -> str:
-        """Store an object authored here, signing it when this store has a key."""
+    @contextlib.contextmanager
+    def staged(self, commit: bool = True):
+        """Hold back every write in the block, then make them all, or none if the block raised or
+        `commit` is false. Objects recorded in the block are visible to it, so later steps may refer
+        to earlier ones; this is how a batch is made atomic without building objects by hand."""
+        self._load()
+        pending = self._pending = {}
+        try:
+            yield
+        except BaseException:
+            commit = False
+            raise
+        finally:
+            self._pending = None
+            if not commit:
+                self._objects = self._graph = self._twins = None
+        # Blobs first, so that no claim is ever on disk without its files.
+        for kind in ("blobs", "objects") if commit else ():
+            for (k, h), data in pending.items():
+                if k == kind:
+                    self._write(k, h, data)
+
+    def twin(self, obj: dict) -> str | None:
+        """An object on record that differs from `obj` at most in its time of creation."""
+        if self._twins is None:
+            self._twins = {}
+            for h, o in sorted(self._load().items(), key=lambda kv: (str(kv[1].get("created")), kv[0])):
+                self._twins.setdefault(twin_key(o), h)
+        return self._twins.get(twin_key(obj))
+
+    def _record(self, obj: dict, reuse: bool = False) -> str:
+        """Store an object authored here, signing it when this store has a key. With `reuse`, an
+        object that differs from one on record only in its time is not recorded again."""
+        if reuse and (h := self.twin(obj)):
+            return h
         h = self.put_object(obj)
         if keyfile := self.keyfile():
             sig = self.put_object({"type": "signature", "object": h, "key": creator(obj)["key"],
@@ -504,16 +566,20 @@ class Store:
 
     # -------------------------------------------------------------- recording
 
-    def ask(self, text: str, parents: list[str] = ()) -> str:
-        """Record a question; `parents` are the larger questions it helps to settle."""
+    def ask(self, text: str, parents: list[str] = (), created: str | None = None, reuse: bool = False) -> str:
+        """Record a question; `parents` are the larger questions it helps to settle.
+
+        Every recording method takes `created`, a time the caller fixes (by default now), so that
+        recording the same thing twice yields the same id, and `reuse` (see `_record`)."""
         return self._record({
             "type": "question", "text": text, "author": self.author(),
-            "parents": sorted({self.resolve(p, "question") for p in parents}), "created": now(),
-        })
+            "parents": sorted({self.resolve(p, "question") for p in parents}), "created": stamp(created),
+        }, reuse)
 
     def claim(self, statement: str, kind: str = "result", files: list[Path] = (),
               cmd: str | None = None, notes: list[str] = (), depends_on: list[str] = (),
-              setup: list[str] = (), answers: list[str] = (), value: dict | str | None = None) -> str:
+              setup: list[str] = (), answers: list[str] = (), value: dict | str | None = None,
+              created: str | None = None, reuse: bool = False) -> str:
         if kind not in KINDS:
             raise EvidenceError(f"kind must be one of {KINDS}")
         deps = sorted({self.resolve(d, "claim") for d in depends_on})
@@ -525,7 +591,7 @@ class Store:
             evidence.append({"kind": "command", "cmd": cmd})
         evidence += [{"kind": "note", "text": n} for n in notes]
         obj = {"type": "claim", "kind": kind, "statement": statement, "author": self.author(),
-               "evidence": evidence, "depends_on": deps, "created": now()}
+               "evidence": evidence, "depends_on": deps, "created": stamp(created)}
         if answers:
             obj["answers"] = sorted({self.resolve(q, "question") for q in answers})
         if value is not None:
@@ -533,10 +599,11 @@ class Store:
             if why := value_invalid(value):
                 raise EvidenceError(f"malformed value: {why}")
             obj["value"] = value
-        return self._record(obj)
+        return self._record(obj, reuse)
 
     def review(self, claim: str, verdict: str, method: str, note: str = "",
-               superseded_by: str | None = None, environment: dict | None = None) -> str:
+               superseded_by: str | None = None, environment: dict | None = None,
+               created: str | None = None, reuse: bool = False) -> str:
         if verdict not in VERDICTS:
             raise EvidenceError(f"verdict must be one of {VERDICTS}")
         claim = self.resolve(claim, "claim")
@@ -545,10 +612,10 @@ class Store:
                 raise EvidenceError("superseded needs --by CLAIM")
             superseded_by = self.resolve(superseded_by, "claim")
         obj = {"type": "review", "claim": claim, "verdict": verdict, "by": self.author(),
-               "method": method, "note": note, "superseded_by": superseded_by, "created": now()}
+               "method": method, "note": note, "superseded_by": superseded_by, "created": stamp(created)}
         if environment:
             obj["environment"] = environment
-        return self._record(obj)
+        return self._record(obj, reuse)
 
     def withdraw(self, review: str, note: str = "") -> str:
         """Take back one of our own reviews. Only the identity that made a review can withdraw it."""

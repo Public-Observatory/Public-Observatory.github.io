@@ -20,6 +20,7 @@ uv run --no-project --python 3.10 python -m unittest discover -s tests       # t
 - `evidence/signing.py`: SSH signatures through `ssh-keygen -Y`.
 - `evidence/sandbox.py`: how `verify` isolates commands (seatbelt, bwrap, docker, none).
 - `evidence/remote.py`: sources for `pull` (store on disk, HTTP, git) and the read-only HTTP server.
+- `evidence/batch.py`: `ev apply`, a run handed over as JSON Lines with local refs, recorded atomically through `Store.ask/claim/review` inside `Store.staged`. `contrib/runs.py` is a worked example of an adapter.
 - `evidence/cli.py`: thin argparse layer. Every read command takes `--json`.
 - `evidence/mcp.py`: MCP server over stdio; each tool maps to CLI arguments, so the CLI is the single source of behaviour.
 - `evidence/report.py`: digest, Markdown and LaTeX reports, Graphviz output. `evidence/guide.py`: the agent instructions.

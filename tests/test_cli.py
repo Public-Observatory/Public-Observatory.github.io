@@ -70,6 +70,58 @@ class CliTest(unittest.TestCase):
         self.assertEqual(shown["status"], "at-risk")
         self.assertEqual(shown["at_risk_because"], [wrong])
 
+    def test_only_evidence_refutes_another_labs_claim(self):
+        self.ev("init", str(self.dir / "lab-c"), "--agent", "mallory", "--lab", "lab-c")
+        q = self.ev("ask", "How many primes are there below 1000?", lab="lab-a")
+        good = self.ev("claim", "There are 168 primes below 1000.", "--file", str(DEMO), "--cmd",
+                       "python3 primes.py 1000 168", "--answers", q, "--value", "168", "--verify",
+                       lab="lab-a").splitlines()[0]
+        top = self.ev("claim", "The primes below 1000 have density 0.168.", "--dep", good, lab="lab-a")
+        slip = self.ev("claim", "There are 169 primes below 1000.", "--answers", q, lab="lab-a")
+        self.ev("review", slip, "refuted", "--method", "counted 1 as a prime", lab="lab-a")  # a retraction holds
+        # The author's own run is a self-check, not a reproduction: nothing is reported as reproduced.
+        shown = self.js("show", good, lab="lab-a")
+        self.assertEqual((shown["status"], shown["self_checked"]), ("proposed", True))
+        self.assertNotIn("Principal results", self.ev("report", lab="lab-a"))
+        self.ev("pull", str(self.dir / "lab-a"), lab="lab-b")
+        self.ev("verify", good, "--unsafe", lab="lab-b")
+        for lab in ("lab-a", "lab-c"):
+            self.ev("pull", str(self.dir / "lab-b"), lab=lab)
+
+        # A refutation in prose by another lab is an objection: the claim is disputed, nothing falls.
+        r = self.ev("review", good, "refuted", "--method", "I disagree", lab="lab-c")
+        self.ev("pull", str(self.dir / "lab-c"), lab="lab-a")
+        shown = self.js("show", good, lab="lab-a")
+        self.assertEqual((shown["status"], shown["independent"], shown["disputed"]), ("reproduced", 1, [r]))
+        self.assertEqual(self.js("check", lab="lab-a"), [])
+        self.assertEqual(self.js("show", q, lab="lab-a")["status"], "answered")
+        self.assertIn("(1 standing answer(s))", self.ev("questions", lab="lab-a"))
+        self.assertEqual([t["action"] for t in self.js("todo", lab="lab-a")][:1], ["adjudicate"])
+        md = self.ev("report", lab="lab-a")
+        self.assertIn("Objected to without evidence that holds: I disagree.", md)
+        self.assertNotIn("Refuted: I disagree", md)
+        self.assertIn("Retracted by its author: counted 1 as a prime.", md)
+
+        # One position per reviewer: lab-b's later refutation replaces its reproduction.
+        self.ev("pull", str(self.dir / "lab-a"), lab="lab-b")
+        self.ev("review", good, "refuted", "--method", "changed my mind", lab="lab-b")
+        shown = self.js("show", good, lab="lab-b")
+        self.assertEqual((shown["status"], shown["independent"], len(shown["disputed"])), ("proposed", 0, 2))
+
+        # Evidence refutes, while it stands: a counter-claim with a command, here a wrong one.
+        self.ev("claim", "x", "--cmd", "true", "--refutes", good, "--dep", good, lab="lab-c", ok=(2,))
+        counter = self.ev("review", good, "refuted", "--method", "the count is 169", "--file", str(DEMO),
+                          "--cmd", "python3 primes.py 1000 169", lab="lab-c").splitlines()[0]
+        self.ev("pull", str(self.dir / "lab-c"), lab="lab-a")
+        self.assertEqual(self.js("show", good, lab="lab-a")["status"], "refuted")
+        self.assertEqual([d["id"] for d in json.loads(self.ev("check", "--json", lab="lab-a", ok=(1,)))], [top])
+        self.assertEqual(self.js("show", counter, lab="lab-a")["status"], "proposed")  # not at risk itself
+        self.assertIn(f"Refuted by claim {counter[:10]}", self.ev("report", lab="lab-a"))
+        # Re-running the counter-claim fells it, and the refutation it carried lapses.
+        self.ev("verify", counter, "--unsafe", lab="lab-a", ok=(1,))
+        self.assertEqual(self.js("show", good, lab="lab-a")["status"], "reproduced")
+        self.assertEqual(self.js("check", lab="lab-a"), [])
+
     def test_show_survives_evidence_of_a_newer_kind_and_a_partial_source(self):
         from evidence import Store
         store = Store(self.dir / "lab-a" / ".evidence")
@@ -116,6 +168,11 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.js("show", sub, lab="lab-a")["status"], "open")
         self.ev("withdraw", r, lab="lab-a")
         self.ev("verify", c, lab="lab-a")
+        # A self-check is not a reproduction; the question is answered once another lab re-runs it.
+        self.assertEqual(self.js("show", sub, lab="lab-a")["status"], "proposed")
+        self.ev("pull", str(self.dir / "lab-a"), lab="lab-b")
+        self.ev("verify", c, "--unsafe", lab="lab-b")
+        self.ev("pull", str(self.dir / "lab-b"), lab="lab-a")
         tree = self.js("questions", lab="lab-a")
         self.assertEqual({q["id"]: q["status"] for q in tree}, {big: "open", sub: "answered"})
         self.assertIn("How dense", self.ev("questions", lab="lab-a"))

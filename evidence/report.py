@@ -1,8 +1,11 @@
 """The record written up for people: a digest, a report in Markdown or LaTeX, and a graph.
 
 Humans are meant to read only what matters. The report therefore leads with the questions and
-how far they are settled, with contradictions between standing answers spelled out, then gives the principal results (reproduced claims that most other work
-rests on), what was refuted and how, the dead ends, the open conjectures, and the work at risk.
+how far they are settled, with contradictions between standing answers spelled out, then gives
+the principal results (claims reproduced by someone other than their author that most other work
+rests on), what was refuted and on what evidence, the claims disputed without evidence, the dead
+ends, the open conjectures, and the work at risk. A refutation is reported by the evidence that
+holds, never by an objection that changed nothing.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 
 from .store import BROKEN, Store, format_value
+from .store import identity as store_identity
 
 ITEMS = 10
 
@@ -36,7 +40,8 @@ def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
     counts = {"claims": len(claims), "questions": len(questions),
               **{k: labels.count(k) for k in ("reproduced", "proposed", "refuted", "superseded", "at-risk")},
               "answered": sum(q.state == "answered" for q in qs.values()),
-              "contested": sum(q.state == "contested" for q in qs.values())}
+              "contested": sum(q.state == "contested" for q in qs.values()),
+              "disputed": sum(bool(s.disputed) for s in statuses.values())}
 
     def given(a: str) -> str:
         return f"{format_value(claims[a]['value'])} (claim {a[:10]}, {statuses[a].label})"
@@ -57,14 +62,13 @@ def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
     out.append(("Principal results", [
         f"{d['statement']} Reproduced by {plural(d['independent'], 'independent lab')}; "
         f"{plural(d['dependents'], 'claim rests', 'claims rest')} on it." for d in digest(store, ITEMS)]))
-    refuted = []
-    for h, s in statuses.items():
-        if s.state in BROKEN:
-            r = next(r for r in s.reviews if r["verdict"] == s.state)
-            found = r["note"].strip().splitlines()[-1] if r["note"].strip() else ""
-            refuted.append(f"{claims[h]['statement']} {s.state.capitalize()}: {r['method']}"
-                           + (f", which gave: {found}." if found else "."))
+    refuted = [f"{claims[h]['statement']} {grounds(store, claims, h, s)}"
+               for h, s in statuses.items() if s.state in BROKEN]
     out.append(("Refuted and superseded", refuted[:ITEMS]))
+    out.append(("Disputed", [
+        f"{claims[h]['statement']} ({s.label}) Objected to without evidence that holds: "
+        + "; ".join(sentence(r["method"]) for r in s.reviews if r["id"] in s.disputed)
+        for h, s in statuses.items() if s.disputed][:ITEMS]))
     out.append(("Dead ends", [c["statement"] for h, c in claims.items()
                               if c["kind"] == "negative" and statuses[h].label not in BROKEN][:ITEMS]))
     out.append(("Open conjectures", [c["statement"] for h, c in claims.items()
@@ -72,6 +76,29 @@ def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
     out.append(("At risk", [f"{claims[h]['statement']} Rests on {plural(len(s.at_risk_because), 'claim')} no "
                             f"longer standing." for h, s in statuses.items() if s.label == "at-risk"][:ITEMS]))
     return counts, [(t, items) for t, items in out if items]
+
+
+def sentence(text: str) -> str:
+    text = text.strip()
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def grounds(store: Store, claims: dict, h: str, s) -> str:
+    """Why a claim fell, as one or two sentences: the evidence that holds, not every opinion."""
+    reviews = {r["id"]: r for r in s.reviews}
+    r = next((reviews[g] for g in s.grounds if reviews[g]["verdict"] == s.state), reviews[s.grounds[0]])
+    last = r["note"].strip().splitlines()[-1] if r["note"].strip() else ""
+    if r["verdict"] == "superseded":
+        text = f"Superseded by claim {r['superseded_by'][:10]}"
+        return text + (f" ({r['method'].strip()})." if r["method"].strip() else ".")
+    if store_identity(r["by"]) == store_identity(claims[h]["author"]):
+        text = f"Retracted by its author: {sentence(r['method'])}"
+    elif c := r.get("counter"):
+        text = f"Refuted by claim {c[:10]}: {sentence(claims[c]['statement'])}"
+    else:
+        text = f"Refuted by a failed run: {sentence(r['method'])}"
+        return text + (f" The output ended with “{last}”." if last else "")
+    return text + (f" Note: {sentence(last)}" if last else "")
 
 
 def tree(roots: list[str], children) -> list[tuple[str, int]]:
@@ -102,6 +129,9 @@ def summary(counts: dict) -> str:
         text += " By status: " + (", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else parts[0]) + "."
     if c["at-risk"]:
         text += f" {plural(c['at-risk'], 'claim rests', 'claims rest')} on work that no longer stands."
+    if c["disputed"]:
+        text += (f" {plural(c['disputed'], 'claim is', 'claims are')} disputed by objections without "
+                 f"evidence, which change no status.")
     if c["questions"] == 1:
         state = "contested: its standing answers disagree" if c["contested"] else \
             "answered" if c["answered"] else "open"

@@ -4,8 +4,9 @@ Palomar's mechanical check is as strong as certainty gets: independent kernels c
 the Lean proof proves the Lean statement, under an allowlist of axioms. So an imported entry
 gets a `reproduced` review from Palomar. What Palomar does not settle is whether the formal
 statement says what the title and paper say; that is only screened by a language model. The
-review records this limit, and a mis-formalisation is answered with a `refuted` review, which
-outranks the reproduction and flags everything built on the entry.
+review records this limit. A mis-formalisation is answered with a counter-claim that carries a
+check of its own (`ev claim ... --refutes`); its refutation outranks the reproduction and flags
+everything built on the entry. A refutation in prose alone marks the entry disputed.
 
 We also take the dependency graph: each entry's provenance statement lists
 the formalizations it builds on and the papers it formalizes. Dependencies on other Palomar
@@ -27,6 +28,10 @@ from .store import EvidenceError, Store, canonical, digest
 DATA = "https://data.palomar-registry.org/"
 SITE = "https://palomar-registry.org/"
 AUTHOR = {"agent": "palomar-import", "lab": "palomar-registry.org"}
+# The kernel check is made by Palomar's verification workflow, not by the authors of the
+# formalisation for whom the importer records the claim, so it is an independent reproduction and
+# is recorded under an identity of its own; under AUTHOR it would count only as a self-check.
+CHECKER = {"agent": "palomar-kernels", "lab": "palomar-verification"}
 # Relationships in `related_formalizations` that make one entry rest on another.
 DEPENDS = {"builds-on", "adapts"}
 PALOMAR_ID = re.compile(r"PALOMAR-\d{4}-\d{2}-\d{2}-\d{6}")
@@ -161,7 +166,7 @@ class Palomar:
         # Entries before schema 5 do not name the kernels; Comparator ran them.
         kernels = ", ".join(k["name"] for k in ver.get("kernels", [])) or "Comparator"
         return {
-            "type": "review", "claim": claim, "verdict": "reproduced", "by": AUTHOR,
+            "type": "review", "claim": claim, "verdict": "reproduced", "by": CHECKER,
             "method": (f"Palomar: formal statement kernel-checked by {kernels}; match with the informal "
                        f"statement checked only by a language model"),
             "note": (f"alignment review {review.get('outcome', 'unknown')} by "

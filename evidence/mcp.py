@@ -39,7 +39,8 @@ TOOLS = {
     "search": ("Find claims and questions related to a query, dead ends included. Use before starting any work.",
                {"query": S, "n": I}, ["query"], lambda a: ["search", a["query"], *flag("-n", a.get("n")), "--json"]),
     "todo": ("The work that would most strengthen the record, highest impact first: resolve (a contested "
-             "question), recheck, reproduce, review, prove, answer. Items others have leased come last and list the lease under `leased`.",
+             "question), recheck, adjudicate (an objection without evidence), selfcheck, reproduce, review, "
+             "prove, answer. Items others have leased come last and list the lease under `leased`.",
              {"n": I}, [], lambda a: ["todo", *flag("-n", a.get("n")), "--json"]),
     "lease": ("Announce that you are working on a claim or question, so that other agents' todo steers elsewhere. "
               "duration is e.g. 90m, 2h or 1d (default 2h). Recording a review or claim on the target ends it.",
@@ -62,20 +63,27 @@ TOOLS = {
               "files are paths on this machine; cmd must exit 0 exactly when the claim holds; verify re-runs it at once. "
               "When the claim answers a question, give the answer as value: an integer (168), true or false, "
               "quoted text, or a quantity with optional uncertainty and unit (9.81 ± 0.02 m/s^2), so that "
-              "disagreeing answers are detected.",
+              "disagreeing answers are detected. refutes lists claims this one shows false (it needs cmd); "
+              "they stand refuted while this claim stands. Do not list them in depends_on.",
               {"statement": S, "kind": S, "files": A, "cmd": S, "setup": A, "notes": A, "depends_on": A,
-               "answers": A, "value": S, "verify": {"type": "boolean"}}, ["statement"],
+               "answers": A, "value": S, "refutes": A, "verify": {"type": "boolean"}}, ["statement"],
               lambda a: ["claim", a["statement"], *flag("--kind", a.get("kind")), *flag("--file", a.get("files")),
                          *flag("--cmd", a.get("cmd")), *flag("--setup", a.get("setup")),
                          *flag("--note", a.get("notes")), *flag("--dep", a.get("depends_on")),
                          *flag("--answers", a.get("answers")), *flag("--value", a.get("value")),
-                         *flag("--verify", a.get("verify"))]),
+                         *flag("--refutes", a.get("refutes")), *flag("--verify", a.get("verify"))]),
     "verify": ("Re-run claims' commands in a sandbox and record the verdicts.", {"ids": A, "timeout": I}, ["ids"],
                lambda a: ["verify", *a["ids"], *flag("--timeout", a.get("timeout"))]),
-    "review": (f"Record a verdict ({', '.join(VERDICTS)}) on a claim and how it was reached.",
-               {"id": S, "verdict": S, "method": S, "note": S, "superseded_by": S}, ["id", "verdict", "method"],
+    "review": (f"Record a verdict ({', '.join(VERDICTS)}) on a claim and how it was reached. Another author's "
+               "claim is refuted only with evidence: counter (a claim with a command that shows it false), or "
+               "files and cmd (recorded as such a counter-claim); a refutation in prose alone only marks the "
+               "claim disputed. To refute by re-running the claim's own command, use verify instead.",
+               {"id": S, "verdict": S, "method": S, "note": S, "superseded_by": S, "counter": S, "files": A,
+                "cmd": S, "setup": A}, ["id", "verdict", "method"],
                lambda a: ["review", a["id"], a["verdict"], "--method", a["method"], *flag("--note", a.get("note")),
-                          *flag("--by", a.get("superseded_by"))]),
+                          *flag("--by", a.get("superseded_by")), *flag("--counter", a.get("counter")),
+                          *flag("--file", a.get("files")), *flag("--cmd", a.get("cmd")),
+                          *flag("--setup", a.get("setup"))]),
     "withdraw": ("Take back one of your own reviews.", {"review": S, "note": S}, ["review"],
                  lambda a: ["withdraw", a["review"], *flag("--note", a.get("note"))]),
     "checkout": ("Write a claim's evidence files into a directory.", {"id": S, "dir": S}, ["id", "dir"],

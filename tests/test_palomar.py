@@ -55,7 +55,12 @@ class PalomarTest(unittest.TestCase):
     def test_misformalisation_refutes_and_flags_dependents(self):
         hb = self.pal.import_entry(B)
         ha = self.pal.local(A)[1]
-        self.store.review(ha, "refuted", "formal statement drops a hypothesis of the paper")
+        # An objection in prose disputes the entry; a counter-claim with a check of its own refutes it.
+        r = self.store.review(ha, "refuted", "formal statement drops a hypothesis of the paper")
+        s = self.store.statuses()
+        self.assertEqual((s[ha].state, s[ha].disputed, s[hb].at_risk_because), ("reproduced", [r], []))
+        self.store.claim("The formal statement of the base lemma holds without the paper's hypothesis H.",
+                         cmd="lake build Counterexample", refutes=[ha])
         s = self.store.statuses()
         self.assertEqual(s[ha].state, "refuted")
         self.assertEqual(s[hb].at_risk_because, [ha])

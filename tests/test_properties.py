@@ -1,8 +1,10 @@
 """Properties that must hold for any history, checked on random ones.
 
-Several labs claim, review, lease and pull from each other at random. Whatever happens:
-  * every lab's statuses of claims and questions, contested questions included, agree with a
-    brute-force reading of its own objects, which ignores leases, so leases never move a status;
+Several labs claim, review, lease and pull from each other at random. Reviews include
+refutations in prose, refutations by a failed run, counter-claims (some refuting each other in
+cycles), self-checks, and a reviewer changing their mind. Whatever happens:
+  * every lab's statuses of claims and questions, contested and disputed ones included, agree with
+    a brute-force reading of its own objects, which ignores leases, so leases never move a status;
   * once every lab has pulled from every other, all labs hold the same objects and agree on
     every status and every conflict, whatever order the pulls happened in (merging is a union of
     sets).
@@ -18,20 +20,51 @@ from fractions import Fraction
 from pathlib import Path
 
 from evidence import Store, signing
-from evidence.store import BROKEN, PRECEDENCE, identity, now
+from evidence.store import BROKEN, identity, now
 
 SEEDS = range(int(os.environ.get("EV_SEEDS", "5")))
 
 
-def oracle(store: Store) -> dict:
-    """Statuses computed the slow, obvious way."""
+def oracle(store: Store) -> tuple[dict, dict]:
+    """Statuses computed the slow, obvious way, from the rules as the README states them."""
     claims, reviews = store.objects("claim"), store.objects("review")
     withdrawn = {w["review"] for w in store.objects("withdrawal").values()
                  if w["review"] in reviews and identity(w["by"]) == identity(reviews[w["review"]]["by"])}
-    own = {}
-    for h in claims:
-        verdicts = {r["verdict"] for k, r in reviews.items() if r["claim"] == h and k not in withdrawn} | {"proposed"}
-        own[h] = next(v for v in PRECEDENCE if v in verdicts)
+    # A reviewer's position on a claim is their latest review of it that is neither withdrawn nor inconclusive.
+    position = {}
+    for k, r in reviews.items():
+        if k in withdrawn or r["verdict"] == "inconclusive":
+            continue
+        key = (r["claim"], identity(r["by"]))
+        if key not in position or (r["created"], k) > (position[key][1]["created"], position[key][0]):
+            position[key] = (k, r)
+
+    def has_command(c):
+        return any(e["kind"] == "command" for e in c["evidence"])
+
+    topple = {h: [] for h in claims}         # verdicts that hold whatever else happens
+    counters = {h: [] for h in claims}       # (review, counter-claim)
+    objections = {h: set() for h in claims}
+    reproducers = {h: set() for h in claims}
+    self_checked = set()
+    for (h, who), (k, r) in position.items():
+        if h not in claims:
+            continue
+        own = who == identity(claims[h]["author"])
+        env = r.get("environment")
+        failed_run = r["verdict"] == "refuted" and isinstance(env, dict) and isinstance(env.get("output_sha256"), str)
+        if r["verdict"] == "reproduced":
+            if own:
+                self_checked.add(h)
+            else:
+                reproducers[h].add(who)
+        elif own or failed_run:
+            topple[h].append(r["verdict"])
+        elif r["verdict"] == "refuted" and r.get("counter") in claims and r["counter"] != h \
+                and has_command(claims[r["counter"]]):
+            counters[h].append((k, r["counter"]))
+        else:
+            objections[h].add(k)
 
     def upstream(h, seen):
         for d in claims[h]["depends_on"]:
@@ -40,17 +73,45 @@ def oracle(store: Store) -> dict:
                 upstream(d, seen)
         return seen
 
-    status = {h: (own[h], {d for d in upstream(h, set()) if own[d] in BROKEN}) for h in claims}
+    ups = {h: upstream(h, set()) for h in claims}
+    # fell[h]: True (refuted or superseded), False (stands on its own), None (not yet known).
+    fell = {h: True if topple[h] else False if not counters[h] else None for h in claims}
+
+    def stands(c):
+        nodes = {c} | ups[c]
+        if any(fell[n] is True for n in nodes):
+            return False
+        return True if all(fell[n] is False for n in nodes) else None
+
+    changed = True
+    while changed:
+        changed = False
+        for h in claims:
+            if fell[h] is None:
+                seen = [stands(c) for _, c in counters[h]]
+                if True in seen or all(v is False for v in seen):
+                    fell[h], changed = True in seen, True
+
+    status = {}
+    for h in claims:
+        if fell[h]:
+            verdicts = topple[h] + ["refuted" for _, c in counters[h] if stands(c)]
+            state, disputed = ("refuted" if "refuted" in verdicts else "superseded"), set()
+        else:
+            state = "reproduced" if reproducers[h] else "proposed"
+            disputed = objections[h] | {k for k, c in counters[h] if stands(c) is None}
+        independent = len(reproducers[h]) if not fell[h] else 0
+        status[h] = (state, {d for d in ups[h] if fell[d] is True}, h in self_checked, disputed, independent)
 
     def label(h):
-        return "at-risk" if status[h][1] and own[h] not in BROKEN else own[h]
+        return "at-risk" if status[h][1] and status[h][0] not in BROKEN else status[h][0]
 
     answered = {}
     for q in store.objects("question"):
         labels = {label(h) for h, c in claims.items() if q in c.get("answers", [])}
         answered[q] = "answered" if "reproduced" in labels else "proposed" if "proposed" in labels else "open"
         standing = [c["value"] for h, c in claims.items()
-                    if q in c.get("answers", []) and "value" in c and own[h] not in BROKEN]
+                    if q in c.get("answers", []) and "value" in c and status[h][0] not in BROKEN]
         if any(disagrees(x, y) for x in standing for y in standing):
             answered[q] = "contested"
     return status, answered
@@ -78,7 +139,8 @@ VALUES = [None, None, {"exact": 168}, {"exact": 170}, {"quantity": "169", "uncer
 
 
 def observed(store: Store) -> tuple[dict, dict]:
-    return ({h: (s.state, set(s.at_risk_because)) for h, s in store.statuses().items()},
+    return ({h: (s.state, set(s.at_risk_because), s.self_checked, set(s.disputed),
+                 s.independent if s.state not in BROKEN else 0) for h, s in store.statuses().items()},
             {h: q.state for h, q in store.question_statuses().items()})
 
 
@@ -93,6 +155,8 @@ def simulate(seed: int, root: Path, labs: int = 3, steps: int = 150, signed: boo
         i = rng.randrange(labs)
         s = stores[i]
         claims = list(s.objects("claim"))
+        runnable = [h for h, c in s.objects("claim").items() if any(e["kind"] == "command" for e in c["evidence"])]
+        reviewed = [r["claim"] for r in s.objects("review").values() if identity(r["by"]) == identity(s.author())]
         questions = list(s.objects("question"))
         roll = rng.random()
         if roll < 0.08:
@@ -100,8 +164,13 @@ def simulate(seed: int, root: Path, labs: int = 3, steps: int = 150, signed: boo
         elif roll < 0.45 or not claims:
             deps = rng.sample(claims, k=min(len(claims), rng.choice([0, 0, 1, 2, 3])))
             answers = rng.sample(questions, k=min(len(questions), rng.choice([0, 0, 1])))
+            # Some claims carry a command, and some of those are counter-claims against others.
+            cmd = rng.choice([None, "true"])
+            refutes = [t for t in rng.sample(claims, k=min(len(claims), rng.choice([0, 0, 0, 1])))
+                       if t not in deps] if cmd else []
             s.claim(f"claim {seed}.{step} by lab{i}", kind=rng.choice(["result", "negative", "conjecture"]),
-                    depends_on=deps, answers=answers, value=rng.choice(VALUES) if answers else None)
+                    depends_on=deps, answers=answers, value=rng.choice(VALUES) if answers else None,
+                    cmd=cmd, refutes=refutes)
         elif roll < 0.52:
             mine = [h for h, r in s.objects("review").items() if identity(r["by"]) == identity(s.author())]
             if mine:
@@ -114,10 +183,24 @@ def simulate(seed: int, root: Path, labs: int = 3, steps: int = 150, signed: boo
             if held:
                 s.release(rng.choice(held))
         elif roll < 0.75:
-            verdict = rng.choice(["reproduced", "reproduced", "refuted", "superseded", "inconclusive"])
-            target = rng.choice(claims)
-            by = rng.choice(claims) if verdict == "superseded" else None
-            s.review(target, verdict, "random", superseded_by=by)
+            # Often a claim this reviewer has reviewed before, so that positions change.
+            target = rng.choice(reviewed if reviewed and rng.random() < 0.4 else claims)
+            how = rng.choice(["reproduced", "reproduced", "prose", "run", "counter", "superseded", "inconclusive",
+                              "by hand"])
+            if how == "prose":
+                s.review(target, "refuted", "I disagree")
+            elif how == "run":
+                s.review(target, "refuted", "re-ran", environment={"output_sha256": "0" * 64})
+            elif how == "counter" and [c for c in runnable if c != target]:
+                s.review(target, "refuted", "counter", counter=rng.choice([c for c in runnable if c != target]))
+            elif how == "by hand":
+                # A counter that the store would not write: no command, or the target itself.
+                s._record({"type": "review", "claim": target, "verdict": "refuted", "by": s.author(),
+                           "method": "m", "note": "", "superseded_by": None, "counter": rng.choice(claims),
+                           "created": now()})
+            elif how in ("reproduced", "superseded", "inconclusive"):
+                by = rng.choice(claims) if how == "superseded" else None
+                s.review(target, how, "random", superseded_by=by)
         else:
             s.pull(stores[rng.choice([j for j in range(labs) if j != i])])
     return stores

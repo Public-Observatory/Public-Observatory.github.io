@@ -27,10 +27,16 @@ class QuestionTest(unittest.TestCase):
         self.assertEqual(self.a.question_statuses()[q].state, "open")
         c = self.a.claim("168", answers=[q[:8]])
         self.assertEqual(self.a.question_statuses()[q].state, "proposed")
-        self.a.review(c, "reproduced", "counted")
+        self.a.review(c, "reproduced", "counted")  # a self-check
+        self.assertEqual(self.a.question_statuses()[q].state, "proposed")
+        self.b.pull(self.a)
+        self.b.review(c, "reproduced", "counted")
+        self.a.pull(self.b)
         self.assertEqual(self.a.question_statuses()[q].state, "answered")
-        self.a.review(c, "refuted", "miscounted")
+        self.assertEqual(self.a.question_statuses()[q].standing, [c])
+        self.a.review(c, "refuted", "miscounted")  # the author retracts
         self.assertEqual(self.a.question_statuses()[q].state, "open")
+        self.assertEqual(self.a.question_statuses()[q].standing, [])
 
     def test_answers_and_parents_must_be_questions(self):
         c = self.a.claim("x")
@@ -145,10 +151,16 @@ class ValueTest(unittest.TestCase):
         todo = self.a.todo(self.a.author())
         self.assertEqual((todo[0]["action"], todo[0]["id"], todo[0]["conflicts"]), ("resolve", q, [sorted([right, wrong])]))
         self.assertIn("168", todo[0]["why"])
-        # Being reproduced does not settle a contradiction; refuting the wrong answer does.
-        self.a.review(right, "reproduced", "counted")
+        # Being reproduced does not settle a contradiction, nor does an objection in prose; refuting
+        # the wrong answer with evidence does.
+        self.b.review(right, "reproduced", "counted")
+        self.a.pull(self.b)
         self.assertEqual(self.a.question_statuses()[q].state, "contested")
-        self.a.review(wrong, "refuted", "the count includes 1 and 1000")
+        r = self.a.review(wrong, "refuted", "the count includes 1 and 1000")
+        self.assertEqual(self.a.statuses()[wrong].disputed, [r])
+        self.assertEqual(self.a.question_statuses()[q].state, "contested")
+        self.a.claim("A sieve finds 168 primes below 1000.", cmd="python3 sieve.py 1000 168", refutes=[wrong])
+        self.assertEqual(self.a.statuses()[wrong].state, "refuted")
         self.assertEqual(self.a.question_statuses()[q].state, "answered")
         self.assertNotIn("resolve", [t["action"] for t in self.a.todo()])
 

@@ -110,7 +110,9 @@ def score(d: Path) -> dict:
     answered = 0
     for q, k in key["questions"].items():
         for h, c in claims.items():
-            if q in c.get("answers", []) and statuses[h].label == "reproduced" and str(k) in re.findall(
+            # Nobody else re-runs the agent's answers here, so a self-check counts as reproducible.
+            reran = statuses[h].label == "reproduced" or (statuses[h].label == "proposed" and statuses[h].self_checked)
+            if q in c.get("answers", []) and reran and str(k) in re.findall(
                     r"\d+", c["statement"].replace(",", "")):
                 answered += 1
                 break

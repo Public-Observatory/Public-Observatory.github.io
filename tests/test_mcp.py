@@ -60,8 +60,9 @@ class McpTest(unittest.TestCase):
         self.assertFalse(err)
         hits = json.loads(self.tool("search", query="primes below 100")[0])
         self.assertEqual({h["id"] for h in hits}, {q, c})
-        shown = json.loads(self.tool("show", id=q[:8])[0])
-        self.assertEqual(shown["status"], "answered")
+        # The author's own re-run is a self-check: the question waits for an independent reproduction.
+        self.assertEqual(json.loads(self.tool("show", id=q[:8])[0])["status"], "proposed")
+        self.assertTrue(json.loads(self.tool("show", id=c)[0])["self_checked"])
 
         parent, _ = self.tool("ask", text="How dense are the primes?")
         _, err = self.tool("lease", id=parent, duration="30m", note="thinking")
@@ -70,6 +71,15 @@ class McpTest(unittest.TestCase):
         self.assertTrue(todo[0]["leased"][0]["mine"])
         self.assertFalse(self.tool("release", id=parent)[1])
         self.assertEqual(json.loads(self.tool("todo")[0])[0]["leased"], [])
+
+        wrong, _ = self.tool("claim", statement="There are 26 primes below 100.", cmd="false")
+        counter, err = self.tool("claim", statement="A sieve finds 25 primes below 100.", cmd="true",
+                                 refutes=[wrong])
+        self.assertFalse(err)
+        shown = json.loads(self.tool("show", id=wrong)[0])
+        self.assertEqual((shown["status"], shown["reviews"][0]["counter"]), ("refuted", counter))
+        _, err = self.tool("review", id=c, verdict="refuted", method="m", counter=counter[:8])
+        self.assertFalse(err)
 
         text, err = self.tool("show", id="nope")
         self.assertTrue(err)

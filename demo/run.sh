@@ -54,10 +54,10 @@ ev pull >/dev/null
 say "the record flags what was built on the error"
 ev check || true
 
-say "alice hastily refutes the density claim itself, then withdraws: it is only at risk, not wrong in itself"
+say "alice refutes the density claim in prose: without evidence this only disputes it, so she withdraws"
 R=$(ev review "$DENS" refuted --method "rests on a refuted count")
-ev withdraw "$R" --note "at risk is the right state; the claim itself was not checked" >/dev/null
 ev show "$DENS"
+ev withdraw "$R" --note "at risk is the right state; the claim itself was not checked" >/dev/null
 
 say "what a human should read"
 ev report

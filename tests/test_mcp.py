@@ -53,8 +53,9 @@ class McpTest(unittest.TestCase):
 
         q, err = self.tool("ask", text="How many primes are below 100?")
         self.assertFalse(err)
-        c, err = self.tool("claim", statement="There are 25 primes below 100.", cmd="true", answers=[q])
+        c, err = self.tool("claim", statement="There are 25 primes below 100.", cmd="true", answers=[q], value="25")
         self.assertFalse(err)
+        self.assertEqual(json.loads(self.tool("show", id=c)[0])["value"], {"exact": 25})
         text, err = self.tool("verify", ids=[c])
         self.assertFalse(err)
         hits = json.loads(self.tool("search", query="primes below 100")[0])

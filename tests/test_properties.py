@@ -1,10 +1,11 @@
 """Properties that must hold for any history, checked on random ones.
 
 Several labs claim, review, lease and pull from each other at random. Whatever happens:
-  * every lab's statuses agree with a brute-force reading of its own objects, which ignores
-    leases, so leases never move a status;
+  * every lab's statuses of claims and questions, contested questions included, agree with a
+    brute-force reading of its own objects, which ignores leases, so leases never move a status;
   * once every lab has pulled from every other, all labs hold the same objects and agree on
-    every status, whatever order the pulls happened in (merging is a union of sets).
+    every status and every conflict, whatever order the pulls happened in (merging is a union of
+    sets).
 """
 
 import os
@@ -13,6 +14,7 @@ import tempfile
 import time
 import unittest
 from datetime import timedelta
+from fractions import Fraction
 from pathlib import Path
 
 from evidence import Store, signing
@@ -47,7 +49,32 @@ def oracle(store: Store) -> dict:
     for q in store.objects("question"):
         labels = {label(h) for h, c in claims.items() if q in c.get("answers", [])}
         answered[q] = "answered" if "reproduced" in labels else "proposed" if "proposed" in labels else "open"
+        standing = [c["value"] for h, c in claims.items()
+                    if q in c.get("answers", []) and "value" in c and own[h] not in BROKEN]
+        if any(disagrees(x, y) for x in standing for y in standing):
+            answered[q] = "contested"
     return status, answered
+
+
+def disagrees(x: dict, y: dict) -> bool:
+    """Disagreement over the values the simulation uses, written out case by case."""
+    def number(v):
+        if "quantity" in v:
+            return Fraction(v["quantity"]), Fraction(v.get("uncertainty", "0")), v.get("unit")
+        e = v["exact"]
+        return None if isinstance(e, (bool, str)) else (Fraction(e), Fraction(0), None)
+
+    a, b = number(x), number(y)
+    if a is None and b is None:
+        return type(x["exact"]) == type(y["exact"]) and x["exact"] != y["exact"]
+    if a is None or b is None or a[2] != b[2]:
+        return False
+    return not (a[0] - a[1] <= b[0] + b[1] and b[0] - b[1] <= a[0] + a[1])
+
+
+VALUES = [None, None, {"exact": 168}, {"exact": 170}, {"quantity": "169", "uncertainty": "1"},
+          {"quantity": "168.5"}, {"quantity": "169", "unit": "primes"}, {"exact": True}, {"exact": False},
+          {"exact": "Riemann"}, {"exact": "Euler"}]
 
 
 def observed(store: Store) -> tuple[dict, dict]:
@@ -74,7 +101,7 @@ def simulate(seed: int, root: Path, labs: int = 3, steps: int = 150, signed: boo
             deps = rng.sample(claims, k=min(len(claims), rng.choice([0, 0, 1, 2, 3])))
             answers = rng.sample(questions, k=min(len(questions), rng.choice([0, 0, 1])))
             s.claim(f"claim {seed}.{step} by lab{i}", kind=rng.choice(["result", "negative", "conjecture"]),
-                    depends_on=deps, answers=answers)
+                    depends_on=deps, answers=answers, value=rng.choice(VALUES) if answers else None)
         elif roll < 0.52:
             mine = [h for h, r in s.objects("review").items() if identity(r["by"]) == identity(s.author())]
             if mine:
@@ -123,6 +150,9 @@ class PropertyTest(unittest.TestCase):
                 todos = [[(t["id"], t["action"], [l["id"] for l in t["leased"]]) for t in s.todo(at=at)]
                          for s in fresh]
                 self.assertTrue(all(t == todos[0] for t in todos))
+                questions = [{h: (q.state, q.answers, q.conflicts) for h, q in s.question_statuses().items()}
+                             for s in fresh]
+                self.assertTrue(all(v == questions[0] for v in questions))
                 self.assertEqual(observed(fresh[0]), oracle(fresh[0]))
 
     @unittest.skipUnless(signing.available(), "needs ssh-keygen")

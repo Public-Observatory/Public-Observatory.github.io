@@ -31,6 +31,7 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 from pathlib import Path
 
 from . import sandbox, signing
@@ -45,7 +46,7 @@ VERDICTS = ("reproduced", "refuted", "superseded", "inconclusive")
 PRECEDENCE = ("refuted", "superseded", "reproduced", "proposed")
 BROKEN = ("refuted", "superseded")
 STATES = (*PRECEDENCE, "at-risk")
-QUESTION_STATES = ("answered", "proposed", "open")
+QUESTION_STATES = ("contested", "answered", "proposed", "open")
 # Exit codes of a shell that could not run the command at all.
 CANNOT_RUN = (126, 127)
 HEX = re.compile(r"[0-9a-f]{64}")
@@ -56,6 +57,19 @@ TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00")
 # others for long. It is clamped when read rather than refused when pulled, so that a later version
 # may allow longer leases without its objects being refused here.
 LEASE_LIMIT = timedelta(days=7)
+
+# A claim may carry the value it gives as its answer, either exact or a measured quantity:
+#     {"exact": 168}   {"exact": true}   {"exact": "Riemann"}
+#     {"quantity": "9.81", "uncertainty": "0.02", "unit": "m/s^2"}    (uncertainty and unit optional)
+# The numbers of a quantity are decimal strings: the digits written are the digits kept, ids do not
+# depend on how some language prints floating point, and comparisons are exact. The exponent is
+# bounded so that an object from elsewhere cannot make a comparison expensive.
+DECIMAL = re.compile(r"-?\d{1,40}(\.\d{1,40})?([eE][-+]?\d{1,3})?")
+# Integers beyond 2^53 lose digits in many JSON readers; such a value is given as a quantity.
+SAFE_INT = 2 ** 53
+MAX_TEXT, MAX_UNIT = 200, 32
+NUMBER = re.compile(r"[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
+PLUS_MINUS = re.compile(r"\s*(?:±|\+/-|\+-)\s*")
 
 
 # The fields each type of object must have, with their types. References are lists or single ids.
@@ -91,6 +105,8 @@ def invalid(obj) -> str | None:
     if obj["type"] == "claim":
         if obj["kind"] not in KINDS:
             return f"unknown kind {obj['kind']!r}"
+        if "value" in obj and (why := value_invalid(obj["value"])):
+            return f"malformed value: {why}"
         for e in obj["evidence"]:
             if not isinstance(e, dict) or not isinstance(e.get("kind"), str):
                 return "malformed evidence"
@@ -103,6 +119,112 @@ def invalid(obj) -> str | None:
     if obj["type"] == "lease" and not (timestamp(obj["created"]) and timestamp(obj["until"])):
         return "lease needs created and until in the form YYYY-MM-DDTHH:MM:SS+00:00"
     return None
+
+
+def value_invalid(v) -> str | None:
+    """Why a claim's value is malformed, or None."""
+    if not isinstance(v, dict):
+        return "not an object"
+    if set(v) == {"exact"}:
+        x = v["exact"]
+        if isinstance(x, bool):
+            return None
+        if isinstance(x, int):
+            return None if abs(x) < SAFE_INT else "integer beyond 2^53; give it as a quantity"
+        if isinstance(x, str):
+            return None if 0 < len(x) <= MAX_TEXT and x == x.strip() else \
+                f"text must have 1 to {MAX_TEXT} characters and no surrounding space"
+        return "exact value must be an integer, a boolean or text"
+    if "quantity" not in v or not set(v) <= {"quantity", "uncertainty", "unit"}:
+        return "needs either exact, or quantity with optional uncertainty and unit"
+    if not (isinstance(v["quantity"], str) and DECIMAL.fullmatch(v["quantity"])):
+        return "quantity must be a decimal string"
+    if "uncertainty" in v and not (isinstance(u := v["uncertainty"], str) and DECIMAL.fullmatch(u)
+                                   and not u.startswith("-")):
+        return "uncertainty must be a non-negative decimal string"
+    if "unit" in v and not (isinstance(u := v["unit"], str) and 0 < len(u) <= MAX_UNIT and u == u.strip()):
+        return f"unit must have 1 to {MAX_UNIT} characters and no surrounding space"
+    return None
+
+
+def parse_value(text: str) -> dict:
+    """Read a value as written on the command line.
+
+    `true` and `false` are booleans and an integer alone is exact. A decimal, or a number followed
+    by a unit or an uncertainty (`9.81 m/s^2 ± 0.02`, `9.81 +/- 0.02 m/s^2`), is a quantity.
+    Anything else is exact text; text that begins like a number must be quoted (`"2026-10-06"`).
+    """
+    t = text.strip()
+    if len(t) >= 2 and t[0] == t[-1] == '"':
+        v = {"exact": t[1:-1].strip()}
+    elif t in ("true", "false"):
+        v = {"exact": t == "true"}
+    elif not (m := NUMBER.match(t)):
+        v = {"exact": t}
+    else:
+        number, rest = decimal_text(m.group()), t[m.end():]
+        if rest and not (rest[0].isspace() or PLUS_MINUS.match(rest)):
+            raise EvidenceError(f"cannot read {text!r}: put a space before the unit, or quote text")
+        unit, *after = PLUS_MINUS.split(rest.strip(), maxsplit=1)
+        v = {"quantity": number}
+        if after:
+            u = NUMBER.match(after[0])
+            if not u or after[0][u.end():u.end() + 1] not in ("", " "):
+                raise EvidenceError(f"cannot read the uncertainty in {text!r}")
+            v["uncertainty"] = decimal_text(u.group())
+            if unit2 := after[0][u.end():].strip():
+                if unit:
+                    raise EvidenceError(f"two units in {text!r}")
+                unit = unit2
+        if unit:
+            v["unit"] = unit
+        if set(v) == {"quantity"} and re.fullmatch(r"-?\d+", number) and abs(int(number)) < SAFE_INT:
+            v = {"exact": int(number)}
+    if why := value_invalid(v):
+        raise EvidenceError(f"cannot read value {text!r}: {why}")
+    return v
+
+
+def decimal_text(number: str) -> str:
+    """A number as the schema writes it: `+.5` becomes `0.5`, `5.` becomes `5`, `1E3` becomes `1e3`."""
+    sign = "-" if number.startswith("-") else ""
+    mantissa, e, exponent = number.lstrip("+-").lower().partition("e")
+    whole, _, frac = mantissa.partition(".")
+    return sign + (whole or "0") + (f".{frac}" if frac else "") + (f"e{exponent}" if e else "")
+
+
+def format_value(v: dict) -> str:
+    """A value as `parse_value` reads it back."""
+    if "exact" in v:
+        x = v["exact"]
+        return ("true" if x else "false") if isinstance(x, bool) else f'"{x}"' if isinstance(x, str) else str(x)
+    return v["quantity"] + (f" ± {v['uncertainty']}" if "uncertainty" in v else "") + \
+        (f" {v['unit']}" if "unit" in v else "")
+
+
+def _numeric(v: dict) -> tuple[Fraction, Fraction, str] | None:
+    """Centre, half-width and unit of a numeric value; an exact integer is a unitless point."""
+    if "quantity" in v:
+        return Fraction(v["quantity"]), Fraction(v.get("uncertainty", "0")), v.get("unit", "")
+    x = v["exact"]
+    return (Fraction(x), Fraction(0), "") if isinstance(x, int) and not isinstance(x, bool) else None
+
+
+def disagree(a: dict, b: dict) -> bool:
+    """Whether two values contradict each other.
+
+    Exact values disagree when they differ. Quantities disagree when their units are the same
+    string and the closed intervals centre ± uncertainty do not meet; an exact integer counts as a
+    unitless quantity without uncertainty. Values that cannot be compared (different units, a
+    number and text) are not said to disagree, since units are not converted and nothing on the
+    record could settle such a dispute.
+    """
+    x, y = _numeric(a), _numeric(b)
+    if x and y:
+        return x[2] == y[2] and abs(x[0] - y[0]) > x[1] + y[1]
+    if x or y:
+        return False
+    return type(a["exact"]) is type(b["exact"]) and a["exact"] != b["exact"]
 
 
 def canonical(obj: dict) -> bytes:
@@ -160,6 +282,8 @@ class QuestionStatus:
     state: str
     answers: list[str] = field(default_factory=list)
     subquestions: list[str] = field(default_factory=list)
+    # Pairs of standing answers whose values disagree; the question is contested while any remain.
+    conflicts: list[list[str]] = field(default_factory=list)
 
 
 class Graph:
@@ -358,7 +482,7 @@ class Store:
 
     def claim(self, statement: str, kind: str = "result", files: list[Path] = (),
               cmd: str | None = None, notes: list[str] = (), depends_on: list[str] = (),
-              setup: list[str] = (), answers: list[str] = ()) -> str:
+              setup: list[str] = (), answers: list[str] = (), value: dict | str | None = None) -> str:
         if kind not in KINDS:
             raise EvidenceError(f"kind must be one of {KINDS}")
         deps = sorted({self.resolve(d, "claim") for d in depends_on})
@@ -373,6 +497,11 @@ class Store:
                "evidence": evidence, "depends_on": deps, "created": now()}
         if answers:
             obj["answers"] = sorted({self.resolve(q, "question") for q in answers})
+        if value is not None:
+            value = parse_value(value) if isinstance(value, str) else value
+            if why := value_invalid(value):
+                raise EvidenceError(f"malformed value: {why}")
+            obj["value"] = value
         return self._record(obj)
 
     def review(self, claim: str, verdict: str, method: str, note: str = "",
@@ -516,22 +645,29 @@ class Store:
         return out
 
     def question_statuses(self, statuses: dict[str, Status] | None = None) -> dict[str, QuestionStatus]:
-        """A question is answered when a standing reproduced claim answers it, proposed when a
-        standing claim does, and open otherwise."""
+        """A question is contested when two of its answers that are neither refuted nor superseded
+        carry values that disagree. Otherwise it is answered when a standing reproduced claim
+        answers it, proposed when a standing claim does, and open otherwise."""
         statuses = statuses if statuses is not None else self.statuses()
         questions = self.objects("question")
+        claims = self.objects("claim")
         out = {h: QuestionStatus("open") for h in questions}
-        for h, q in questions.items():
+        for h, q in sorted(questions.items()):
             for p in q["parents"]:
                 if p in out:
                     out[p].subquestions.append(h)
-        for h, c in self.objects("claim").items():
+        for h, c in sorted(claims.items()):
             for q in c.get("answers", []):
                 if q in out:
                     out[q].answers.append(h)
         for qs in out.values():
             labels = {statuses[a].label for a in qs.answers}
             qs.state = "answered" if "reproduced" in labels else "proposed" if "proposed" in labels else "open"
+            valued = [a for a in qs.answers if "value" in claims[a] and statuses[a].state not in BROKEN]
+            qs.conflicts = [[a, b] for i, a in enumerate(valued) for b in valued[i + 1:]
+                            if disagree(claims[a]["value"], claims[b]["value"])]
+            if qs.conflicts:
+                qs.state = "contested"
         return out
 
     def leases(self, at: str | datetime) -> dict[str, list[dict]]:
@@ -600,8 +736,11 @@ class Store:
 
         The impact of work on a claim is the number of claims it would affect: the claim itself and
         everything built on it. The impact of answering a question is the number of questions it
-        would help settle. Claims by `me` are not offered for reproduction, since that would not be
-        independent; instead each of our runnable claims is offered once for a self-check.
+        would help settle. Resolving a contested question counts both: the questions it settles and
+        the claims in dispute with everything built on them; at equal impact it comes first, since
+        a contradiction on the record misleads everyone who reads it. Claims by `me` are not offered
+        for reproduction, since that would not be independent; instead each of our runnable claims
+        is offered once for a self-check.
 
         Given a reference time `at`, each item lists under `leased` the leases that hold on it at
         that time, and items leased by anyone but `me` come after all others, so that agents
@@ -642,23 +781,40 @@ class Store:
 
         questions = self.objects("question")
         qstatus = self.question_statuses(statuses)
-        for h, q in questions.items():
-            if qstatus[h].state != "open" or any(qstatus[s].state == "open" for s in qstatus[h].subquestions):
-                continue  # answered, or better approached through an open subquestion
-            ancestors, stack = set(), list(q["parents"])
+
+        def ancestors(h: str) -> set[str]:
+            seen, stack = set(), list(questions[h]["parents"])
             while stack:
                 p = stack.pop()
-                if p in questions and p not in ancestors:
-                    ancestors.add(p)
+                if p in questions and p not in seen:
+                    seen.add(p)
                     stack.extend(questions[p]["parents"])
-            add("answer", h, q["text"], 1 + len(ancestors), "open question; claim an answer with --answers")
+            return seen
 
+        for h, q in questions.items():
+            qs = qstatus[h]
+            if qs.state == "contested":
+                # Settling the dispute decides the question and its ancestors, and either fells or
+                # vindicates each disputed claim and everything built on it.
+                involved = sorted({c for pair in qs.conflicts for c in pair})
+                affected = g.mask(involved)
+                for c in involved:
+                    affected |= g.down[c]
+                pairs = "; ".join(f"{format_value(claims[a]['value'])} ({a[:10]}) against "
+                                  f"{format_value(claims[b]['value'])} ({b[:10]})" for a, b in qs.conflicts)
+                add("resolve", h, q["text"], 1 + len(ancestors(h)) + affected.bit_count(),
+                    f"standing answers disagree: {pairs}; re-run them and refute the wrong one")
+                items[-1]["conflicts"] = qs.conflicts
+                continue
+            if qs.state != "open" or any(qstatus[s].state == "open" for s in qs.subquestions):
+                continue  # answered, or better approached through an open subquestion
+            add("answer", h, q["text"], 1 + len(ancestors(h)), "open question; claim an answer with --answers")
         leases = self.leases(at) if at is not None else {}
         for i in items:
             i["leased"] = [{"id": lease["id"], "by": lease["by"], "until": lease["until"],
                             "mine": mine is not None and identity(lease["by"]) == mine}
                            for lease in leases.get(i["id"], [])]
-        priority = {"recheck": 0, "selfcheck": 1, "reproduce": 2, "review": 3, "prove": 4, "answer": 5}
+        priority = {"resolve": 0, "recheck": 1, "selfcheck": 2, "reproduce": 3, "review": 4, "prove": 5, "answer": 6}
         return sorted(items, key=lambda i: (any(not lease["mine"] for lease in i["leased"]), -i["impact"],
                                             priority[i["action"]], i["id"]))
 

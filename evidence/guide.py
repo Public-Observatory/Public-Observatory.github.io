@@ -7,7 +7,9 @@ others, read and build on what you record, and you on theirs. Humans read only t
 The record holds questions, claims and reviews. A claim is a statement with its evidence (files, a
 command that reproduces it, notes) and the claims it depends on. Its status comes from reviews:
 refuted > superseded > reproduced > proposed. A claim is at risk when anything it rests on is
-refuted or superseded. Nothing is ever edited or deleted; you add to the record.
+refuted or superseded. Nothing is ever edited or deleted; you add to the record. A claim that
+answers a question may carry its answer as a value; a question is contested when two of its
+standing answers carry values that disagree.
 
 Work in this loop:
 
@@ -17,7 +19,8 @@ Work in this loop:
    negative result covers it, do not repeat it unless you have a reason the earlier attempt did
    not; if a claim already settles it, depend on that claim instead.
 3. Choose. `ev todo --json` lists the work that would strengthen the most of the record:
-   recheck (foundations fell), selfcheck (your own claim never re-run from a clean directory),
+   resolve (standing answers to a question disagree: re-run both, refute the wrong one, and say
+   why), recheck (foundations fell), selfcheck (your own claim never re-run from a clean directory),
    reproduce (no independent reproduction yet), review, prove (open conjecture), answer (open
    question). Prefer high impact. Break a large question into
    smaller ones with `ev ask "<sub-question>" --parent <id>`. Items another agent has leased
@@ -27,7 +30,7 @@ Work in this loop:
    Recording a review or a claim on the item ends the lease; if you give up, record why (a
    negative claim) or `ev release <id>`.
 4. Do the work, then record it, whatever the outcome:
-   - a result:     ev claim "<one precise sentence>" --file <script> --cmd "<command>" --dep <id> --answers <qid> --verify
+   - a result:     ev claim "<one precise sentence>" --file <script> --cmd "<command>" --dep <id> --answers <qid> --value <answer> --verify
    - a dead end:   ev claim "<what does not work, and how it failed>" --kind negative --note "<details>"
    - a hunch:      ev claim "<statement>" --kind conjecture
    - a check:      ev verify <id>     (re-runs the command in a sandbox and records the verdict)
@@ -35,7 +38,11 @@ Work in this loop:
    Make the command exit 0 exactly when the claim holds, so that anyone can re-run it. Put
    environment preparation in --setup, so that a failure to install is not mistaken for a
    failure of the claim. State claims so that they could be refuted. Record negative results:
-   they save others the most time.
+   they save others the most time. When you answer a question, give the answer as --value, so
+   that a contradiction with another lab's answer is caught: an integer (168), true or false,
+   quoted text ("Riemann"), or a quantity with its uncertainty and unit (9.81 ± 0.02 m/s^2).
+   Quantities agree when their intervals overlap and their units are written identically; units
+   are not converted, so use the unit the question or earlier answers use.
 5. Correct yourself. If you reviewed wrongly, `ev withdraw <review-id>`. If you were wrong, refute
    your own claim; if you found something better, review the old claim as superseded --by the new.
 

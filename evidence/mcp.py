@@ -38,8 +38,8 @@ def flag(name: str, values) -> list[str]:
 TOOLS = {
     "search": ("Find claims and questions related to a query, dead ends included. Use before starting any work.",
                {"query": S, "n": I}, ["query"], lambda a: ["search", a["query"], *flag("-n", a.get("n")), "--json"]),
-    "todo": ("The work that would most strengthen the record, highest impact first: recheck, reproduce, review, "
-             "prove, answer. Items others have leased come last and list the lease under `leased`.",
+    "todo": ("The work that would most strengthen the record, highest impact first: resolve (a contested "
+             "question), recheck, reproduce, review, prove, answer. Items others have leased come last and list the lease under `leased`.",
              {"n": I}, [], lambda a: ["todo", *flag("-n", a.get("n")), "--json"]),
     "lease": ("Announce that you are working on a claim or question, so that other agents' todo steers elsewhere. "
               "duration is e.g. 90m, 2h or 1d (default 2h). Recording a review or claim on the target ends it.",
@@ -51,20 +51,25 @@ TOOLS = {
              {"id": S}, ["id"], lambda a: ["show", a["id"], "--json"]),
     "log": ("All claims, optionally only those with a given status.", {"status": S}, [],
             lambda a: ["log", *flag("--status", a.get("status")), "--json"]),
-    "questions": ("The tree of questions with their status and answers.", {}, [], lambda a: ["questions", "--json"]),
+    "questions": ("The tree of questions with their status (contested, answered, proposed, open), answers, "
+                  "values and conflicts.", {}, [], lambda a: ["questions", "--json"]),
     "check": ("Claims that rest on refuted or superseded work.", {}, [], lambda a: ["check", "--json"]),
     "digest": ("The reproduced results most other work builds on.", {"n": I}, [],
                lambda a: ["digest", *flag("-n", a.get("n")), "--json"]),
     "ask": ("Record an open question, optionally as part of larger ones.", {"text": S, "parents": A}, ["text"],
             lambda a: ["ask", a["text"], *flag("--parent", a.get("parents"))]),
     "claim": (f"Record a claim with its evidence. kind is one of {', '.join(KINDS)}; record dead ends as negative. "
-              "files are paths on this machine; cmd must exit 0 exactly when the claim holds; verify re-runs it at once.",
+              "files are paths on this machine; cmd must exit 0 exactly when the claim holds; verify re-runs it at once. "
+              "When the claim answers a question, give the answer as value: an integer (168), true or false, "
+              "quoted text, or a quantity with optional uncertainty and unit (9.81 ± 0.02 m/s^2), so that "
+              "disagreeing answers are detected.",
               {"statement": S, "kind": S, "files": A, "cmd": S, "setup": A, "notes": A, "depends_on": A,
-               "answers": A, "verify": {"type": "boolean"}}, ["statement"],
+               "answers": A, "value": S, "verify": {"type": "boolean"}}, ["statement"],
               lambda a: ["claim", a["statement"], *flag("--kind", a.get("kind")), *flag("--file", a.get("files")),
                          *flag("--cmd", a.get("cmd")), *flag("--setup", a.get("setup")),
                          *flag("--note", a.get("notes")), *flag("--dep", a.get("depends_on")),
-                         *flag("--answers", a.get("answers")), *flag("--verify", a.get("verify"))]),
+                         *flag("--answers", a.get("answers")), *flag("--value", a.get("value")),
+                         *flag("--verify", a.get("verify"))]),
     "verify": ("Re-run claims' commands in a sandbox and record the verdicts.", {"ids": A, "timeout": I}, ["ids"],
                lambda a: ["verify", *a["ids"], *flag("--timeout", a.get("timeout"))]),
     "review": (f"Record a verdict ({', '.join(VERDICTS)}) on a claim and how it was reached.",

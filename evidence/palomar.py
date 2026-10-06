@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from typing import Callable
 
-from .store import EvidenceError, Store
+from .store import EvidenceError, Store, canonical, digest
 
 DATA = "https://data.palomar-registry.org/"
 SITE = "https://palomar-registry.org/"
@@ -51,6 +51,7 @@ class Palomar:
         self.store = store
         self.fetch = fetch
         self._recent: dict | None = None
+        self._genuine: dict[str, bool] = {}
 
     # ---------------------------------------------------------------- lookup
 
@@ -59,9 +60,33 @@ class Palomar:
         out = {}
         for h, c in self.store.objects("claim").items():
             src = c.get("source", {})
-            if src.get("registry") == "palomar" and src.get("id") == pid:
+            if src.get("registry") == "palomar" and src.get("id") == pid and self.genuine(h):
                 out[src["version"]] = h
         return out
+
+    def genuine(self, h: str) -> bool:
+        """Whether a claim is exactly what importing its entry gives, resting only on genuine imports.
+
+        Anyone can record a claim naming Palomar as its source, unsigned, as Palomar does not sign.
+        Taking such a claim for the entry would let a peer substitute its statement, its
+        dependencies, or a fictitious newer version that supersedes the real one; so the registry
+        is asked.
+        """
+        if h not in self._genuine:
+            c = self.store.get(h)
+            src = c.get("source", {})
+            ok = PALOMAR_ID.fullmatch(str(src.get("id"))) and type(src.get("version")) is int
+            e = self.fetch(f"entries/{src['id']}-v{src['version']}.json") if ok else None
+            if e is None:
+                self._genuine[h] = False
+            else:
+                related = {m.group() for r in e.get("provenance", {}).get("related_formalizations", [])
+                           if r.get("relationship") in DEPENDS and (m := PALOMAR_ID.search(r.get("identifier", "")))}
+                claims = self.store.objects("claim")
+                self._genuine[h] = digest(canonical(self.to_claim(e, c["depends_on"]))) == h and all(
+                    d in claims and claims[d].get("source", {}).get("id") in related and self.genuine(d)
+                    for d in c["depends_on"])
+        return self._genuine[h]
 
     def recent(self) -> list[dict]:
         if self._recent is None:

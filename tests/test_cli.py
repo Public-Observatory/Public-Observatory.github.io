@@ -70,6 +70,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(shown["status"], "at-risk")
         self.assertEqual(shown["at_risk_because"], [wrong])
 
+    def test_show_survives_evidence_of_a_newer_kind_and_a_partial_source(self):
+        from evidence import Store
+        store = Store(self.dir / "lab-a" / ".evidence")
+        h = store.put_object({"type": "claim", "kind": "result", "statement": "from the future",
+                              "author": {"agent": "carol"}, "depends_on": [], "created": "x",
+                              "evidence": [{"kind": "dataset", "uri": "s3://x"}], "source": {"registry": "r"}})
+        self.assertIn("s3://x", self.ev("show", h, lab="lab-a"))
+
     def test_log_filters_by_status(self):
         h = self.ev("claim", "x", lab="lab-a")
         self.ev("review", h, "refuted", "--method", "counterexample", lab="lab-a")

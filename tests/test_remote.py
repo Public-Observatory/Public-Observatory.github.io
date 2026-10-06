@@ -56,5 +56,21 @@ class RemoteTest(unittest.TestCase):
         self.assertIn(self.h, self.b.objects("claim"))
 
 
+    def test_git_url_cannot_be_read_as_an_option(self):
+        seen = []
+
+        def run(argv, **kw):
+            seen.append(argv)
+            return subprocess.CompletedProcess(argv, 1, "", "no")
+
+        real, subprocess.run = subprocess.run, run
+        try:
+            with self.assertRaises(EvidenceError):
+                with open_source("--upload-pack=x.git"):
+                    pass
+        finally:
+            subprocess.run = real
+        self.assertLess(seen[0].index("--"), seen[0].index("--upload-pack=x.git"))
+
 if __name__ == "__main__":
     unittest.main()

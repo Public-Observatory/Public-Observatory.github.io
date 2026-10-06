@@ -1,10 +1,14 @@
+import contextlib
+import io
 import os
+import time
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from evidence import EvidenceError, Store
+from evidence import EvidenceError, Store, report
+from evidence.cli import main
 from evidence.store import disagree, format_value, invalid, parse_value, value_invalid
 
 
@@ -189,6 +193,28 @@ class WithdrawalTest(unittest.TestCase):
         self.b.put_object({"type": "withdrawal", "review": r, "by": self.b.author(), "note": "", "created": "x"})
         self.assertEqual(self.b.statuses()[base].state, "refuted")
 
+
+    def test_question_dags_are_read_in_linear_time(self):
+        # Layers of two questions, each part of both questions above it: 2^n paths, 2n questions.
+        layer = [self.a.ask("root")]
+        for i in range(20):
+            layer = [self.a.put_object({"type": "question", "text": f"q{i}.{j}", "author": {"agent": "m"},
+                                        "parents": sorted(layer), "created": "x"}) for j in range(2)]
+        chain = layer[0]
+        for i in range(1500):
+            chain = self.a.put_object({"type": "question", "text": f"c{i}", "author": {"agent": "m"},
+                                       "parents": [chain], "created": "x"})
+        store = Store(self.a.root)
+        start = time.time()
+        self.assertLess(len(report.markdown(store).splitlines()), 2000)
+        os.environ["EV_DIR"] = str(self.a.root)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(main(["questions"]), 0)
+        finally:
+            os.environ.pop("EV_DIR")
+        self.assertLess(len(out.getvalue().splitlines()), 2000)
+        self.assertLess(time.time() - start, 10)
 
 if __name__ == "__main__":
     unittest.main()

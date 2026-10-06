@@ -70,6 +70,13 @@ TOOLS = {
                          *flag("--note", a.get("notes")), *flag("--dep", a.get("depends_on")),
                          *flag("--answers", a.get("answers")), *flag("--value", a.get("value")),
                          *flag("--verify", a.get("verify"))]),
+    "apply": ("Record a whole run at once: an array of questions, claims and reviews, each an object with exactly one "
+              "of ask, claim or review, e.g. {\"ask\": text, \"ref\": \"q1\"}, {\"claim\": statement, \"ref\": \"c1\", "
+              "\"answers\": [\"q1\"], \"value\": 168, \"kind\": \"negative\"}, {\"review\": \"c1\", \"verdict\": ..., "
+              "\"method\": ...}. References are refs of earlier items or ids on record. All or nothing; returns each "
+              "ref's id. The guide lists every field.",
+              {"lines": {"type": "array", "items": {"type": "object"}}, "dry_run": {"type": "boolean"}}, ["lines"],
+              lambda a: ["apply", "--lines", json.dumps(a["lines"]), *flag("--dry-run", a.get("dry_run")), "--json"]),
     "verify": ("Re-run claims' commands in a sandbox and record the verdicts.", {"ids": A, "timeout": I}, ["ids"],
                lambda a: ["verify", *a["ids"], *flag("--timeout", a.get("timeout"))]),
     "review": (f"Record a verdict ({', '.join(VERDICTS)}) on a claim and how it was reached.",

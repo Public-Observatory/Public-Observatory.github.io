@@ -1,8 +1,10 @@
 """Where objects come from: another store on disk, a store served over HTTP, or a git repository.
 
-A source has two operations, `listing()` (the ids of its objects and blobs) and `read(kind, id)`.
-`Store` is itself a source. Every byte read is checked against its id by `Store.pull`, so a source
-need not be trusted: it can withhold objects but cannot alter them.
+A source has two operations, `listing()` (the ids of its objects and blobs) and `open(kind, id)`
+(a binary file). `Store` is itself a source. Every byte read is checked against its id by
+`Store.pull`, so a source need not be trusted: it can withhold objects but cannot alter them. Nor
+can it exhaust memory or disk: `pull` reads every file in bounded chunks up to its limits, and the
+index of an HTTP source is read up to INDEX_LIMIT bytes.
 
 Serving is read-only and stateless: `ev serve` answers `GET /index.json` with the listing and
 `GET /objects/ab/cdef….json` or `GET /blobs/ab/cdef…` with the file. Any static host can serve a
@@ -25,6 +27,8 @@ from .errors import EvidenceError
 
 HEX = re.compile(r"[0-9a-f]{64}")
 PATH = re.compile(r"/(objects|blobs)/([0-9a-f]{2})/([0-9a-f]{62})(\.json)?")
+# Room for the ids of about a million objects and blobs.
+INDEX_LIMIT = 2 ** 26
 
 
 class HttpSource:
@@ -32,11 +36,10 @@ class HttpSource:
         self.url = url.rstrip("/") + "/"
         self.name = url
 
-    def _get(self, path: str) -> bytes:
+    def _open(self, path: str):
         req = urllib.request.Request(self.url + path, headers={"User-Agent": "evidence"})
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                return r.read()
+            return urllib.request.urlopen(req, timeout=60)
         except urllib.error.HTTPError as e:
             e.close()
             raise EvidenceError(f"{e.code} fetching {self.url + path}") from e
@@ -44,11 +47,22 @@ class HttpSource:
             raise EvidenceError(f"cannot reach {self.url} ({e.reason})") from e
 
     def listing(self) -> dict[str, list[str]]:
-        index = json.loads(self._get("index.json"))
-        return {k: [h for h in index.get(k, []) if HEX.fullmatch(h)] for k in ("objects", "blobs")}
+        with self._open("index.json") as r:
+            data = r.read(INDEX_LIMIT + 1)
+        if len(data) > INDEX_LIMIT:
+            raise EvidenceError(f"the index of {self.url} exceeds {INDEX_LIMIT} bytes")
+        try:
+            index = json.loads(data)
+        except (ValueError, RecursionError) as e:
+            raise EvidenceError(f"the index of {self.url} is not JSON") from e
+        if not isinstance(index, dict):
+            raise EvidenceError(f"the index of {self.url} is not a JSON object")
+        return {k: [h for h in index.get(k, []) if isinstance(h, str) and HEX.fullmatch(h)]
+                for k in ("objects", "blobs")}
 
-    def read(self, kind: str, h: str) -> bytes:
-        return self._get(f"{kind}/{h[:2]}/{h[2:]}" + (".json" if kind == "objects" else ""))
+    def open(self, kind: str, h: str):
+        """The response itself, so that `pull` reads it in chunks and stops at its limits."""
+        return self._open(f"{kind}/{h[:2]}/{h[2:]}" + (".json" if kind == "objects" else ""))
 
 
 def is_git(spec: str) -> bool:

@@ -50,6 +50,7 @@ ev pull ../lab-b                                   # a store on disk
 ev pull https://lab-b.example.org/evidence         # a store served by `ev serve`, or any static host
 ev pull https://github.com/lab-c/record.git        # a git repository holding a store (URL#subdir for a subdirectory)
 ev remote add b https://lab-b.example.org/evidence && ev pull     # with no argument, pull every remote
+ev pull ../lab-b --max-blob 2G                    # accept larger evidence files than the default 256M
 ev push ../shared                                  # write into a store on disk
 ev serve --port 8000                               # read-only HTTP; --export DIR for a static host
 ev trust add lab-b lab-b.pub                       # count lab-b's reproductions as trusted
@@ -57,7 +58,7 @@ ev fsck                                            # check hashes, signatures, s
 ev whoami
 ```
 
-Objects are immutable JSON files named by the SHA-256 of their content, stored under `.evidence/`. Pulling is a union of sets, so there are no conflicts, and every status is a function of the objects alone, so labs that have exchanged everything agree. `pull` checks every hash, the structure of every object, and every signature, and writes nothing unless all pass.
+Objects are immutable JSON files named by the SHA-256 of their content, stored under `.evidence/`. Pulling is a union of sets, so there are no conflicts, and every status is a function of the objects alone, so labs that have exchanged everything agree. `pull` checks every hash, the structure of every object, and every signature, and writes nothing unless all pass. It fetches only the evidence files that the claims it receives refer to.
 
 ## Model
 
@@ -72,7 +73,8 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 ## Trust and safety
 
 - **Signatures.** With a key (`ev init --keygen`, or `--key ~/.ssh/id_ed25519`), every object a lab records is signed with `ssh-keygen -Y sign`, as git signs commits. The signature signs the object's id and is an object of its own, so ids do not change. An object naming a key is accepted from elsewhere only with a valid signature by that key, so nobody can record a reproduction in another lab's name.
-- **Sandbox.** `ev verify` runs other labs' commands with `sandbox-exec` on macOS, bubblewrap on Linux, or Docker (`EV_SANDBOX=docker`, image from `EV_IMAGE`). The command may write only in its scratch directory, cannot read `~/.ssh` and similar places, and has no network; setup steps may use the network and write to toolchain caches. A failure that looks like the sandbox's doing is recorded as inconclusive. Without a sandbox, `verify` refuses another lab's claim unless given `--unsafe`.
+- **Bounded pulls.** A source need not be trusted, so `pull` bounds what it takes from one: an object may have at most 1 MiB, an evidence file at most 256 MiB, and everything fetched from one source at most 4 GiB. Evidence files are streamed to disk while hashed, never held in memory, and an HTTP response is read no further than the bound. A source that exceeds a bound is refused before anything is written. The bounds are set in `config.json` (`"limits": {"object": "1M", "blob": "256M", "total": "4G"}`) or for one pull with `--max-object`, `--max-blob` and `--max-total`.
+- **Sandbox.** `ev verify` runs other labs' commands with `sandbox-exec` on macOS, bubblewrap on Linux, or Docker (`EV_SANDBOX=docker`, image from `EV_IMAGE`). The home directory is hidden from the command, except the directories where toolchains live (`~/.elan`, `~/.cargo`, `~/.pyenv`, `~/.local/lib` and the like, those named by `PATH` and by variables such as `ELAN_HOME`, and any listed under `sandbox_read` in `config.json`); credentials inside these, the verifying store and its key stay hidden. The command sees only the environment variables it needs, so tokens held in variables do not reach it. It may write only in its scratch directory, which is deleted afterwards, and has no network. Setup steps may use the network but no unix socket (the ssh agent, a Docker daemon), and their downloads and caches go into the scratch directory, so that nothing persists to influence a later run; installed toolchains are read-only. On macOS the command cannot have LaunchServices or Apple Events start a program outside the sandbox, nor read the keychain or the pasteboard; on Linux it runs in fresh process and IPC namespaces with an empty `/tmp` and `/run`. Files outside the home directory remain readable, so keep keys and stores under it. A failure that looks like the sandbox's doing is recorded as inconclusive. Without a sandbox, `verify` refuses another lab's claim unless given `--unsafe`.
 - **Environment failures are not refutations.** Only a command that runs and fails refutes. A failed setup, a timeout or a missing program is inconclusive, so a broken environment cannot topple a claim and everything built on it.
 
 ## Agents

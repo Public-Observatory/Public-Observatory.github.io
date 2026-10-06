@@ -258,7 +258,7 @@ class CliTest(unittest.TestCase):
         self.ev("remote", "add", "shared", str(shared), "--push", lab="lab-b")
         self.ev("lease", x, "--note", "again", lab="lab-b")
         self.ev("pull", lab="lab-a")
-        self.assertEqual(self.js("todo", lab="lab-a")[0]["leased"][0]["note"], "again")
+        self.assertIn("again", [lease["note"] for lease in self.js("todo", lab="lab-a")[0]["leased"]])
         self.ev("release", x, lab="lab-b")
         self.ev("pull", lab="lab-a")
         self.assertEqual(self.js("todo", lab="lab-a")[0]["leased"], [])

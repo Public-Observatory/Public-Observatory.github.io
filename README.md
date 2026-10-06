@@ -104,17 +104,22 @@ ev review <id> refuted --method "formal statement drops a hypothesis"   # a mis-
 
 ## Benchmark
 
-`bench/planted.py` measures how well an agent works on a shared record. It builds a world about prime counts in which some claims are false, some true claims rest on false ones, one approach is a recorded dead end, and some questions are open; the answer key is kept outside the stores.
+`bench/planted.py` measures how well an agent works on a shared record. It builds a world about prime counts in which some claims are false, two claims derived from false ones are themselves wrong, one approach is a recorded dead end (checkable on any machine, since it compares two methods rather than timing one), one question has two answers that disagree, and some questions are open. No answer key is written to disk: `score` derives it from the benchmark's constants.
 
 ```sh
-python3 bench/planted.py setup /tmp/b      # the world, an empty agent store with the world as a remote, the key
+python3 bench/planted.py setup /tmp/b      # the world, and an empty agent store with the world as a remote
 python3 bench/planted.py task /tmp/b       # the prompt to give the agent
-python3 bench/planted.py score /tmp/b      # errors refuted, true claims left standing and reproduced,
-                                           # dependants flagged, questions answered, dead end repeated
+python3 bench/planted.py score /tmp/b      # errors refuted, true claims left standing and reproduced, wrong
+                                           # dependants replaced, questions answered with the right value,
+                                           # wrong answers, contested question resolved, dead end repeated
 python3 bench/planted.py baseline /tmp/b   # a scripted agent that only re-runs what `ev todo` offers
+python3 bench/planted.py swarm /tmp/s --agents 4 [--no-leases]   # scripted agents sharing by pull
+python3 bench/planted.py run /tmp/r --model M --cmd "AGENT"      # set up, run, score, record in bench/results/
 ```
 
-The scripted baseline refutes every planted error and flags everything resting on them, but answers no questions. A real agent should match it on the first four scores and add answers.
+The scripted baseline refutes every planted error and both resolves the contested question and leaves the dead end standing by re-running them, but replaces no wrong dependant and answers no question. A real agent should match it on errors refuted, true claims left standing and reproduced, and the contested question, and should add the rest. Repeating the dead end counts against an agent only if it tries trial division again without reviewing or building on the negative claim. `bench/results/README.md` describes how runs of real models are recorded.
+
+In `swarm`, each round every agent pulls from the world and the others, takes the first reproduction `todo` offers (with leases, leasing it and skipping items others hold), and then all run what they took. With four agents, duplicated attempts (verifications of a claim another agent also verified) fall from 27 of 36 without leases to 0 of 9 with them, and the work takes 3 rounds instead of 9.
 
 ## Tests
 

@@ -139,6 +139,37 @@ class CliTest(unittest.TestCase):
         self.ev("init", str(self.dir / "lab-c"), "--agent", "carol")
         self.assertIn("pulled 2", self.ev("pull", str(pub), lab="lab-c"))
 
+    def test_leases_spread_agents_over_the_work(self):
+        x = self.ev("claim", "x", "--cmd", "true", lab="lab-a")
+        y = self.ev("claim", "y", "--cmd", "true", lab="lab-a")
+        self.ev("init", str(self.dir / "lab-c"), "--agent", "carol", "--lab", "lab-c")
+        for lab in ("lab-b", "lab-c"):
+            self.ev("pull", str(self.dir / "lab-a"), lab=lab)
+        first = self.js("todo", lab="lab-b")[0]["id"]
+        other = y if first == x else x
+        self.assertEqual(self.js("todo", lab="lab-c")[0]["id"], first)  # both would take the same item
+
+        self.ev("lease", first[:8], "--for", "90m", "--note", "re-running", lab="lab-b")
+        self.ev("lease", first, "--for", "forever", lab="lab-b", ok=(2,))
+        self.ev("lease", first, "--for", "8d", lab="lab-b", ok=(2,))
+        own = self.js("todo", lab="lab-b")[0]
+        self.assertEqual((own["id"], own["leased"][0]["mine"]), (first, True))  # our own lease hides nothing
+        self.ev("pull", str(self.dir / "lab-b"), lab="lab-c")
+        todo = self.js("todo", lab="lab-c")
+        self.assertEqual([t["id"] for t in todo], [other, first])
+        self.assertEqual(todo[1]["leased"][0]["by"]["agent"], "bob")
+        self.assertIn("leased by lab-b/bob until", self.ev("todo", lab="lab-c"))
+        # Judged at the moment the lease runs out, the item is first again.
+        until = todo[1]["leased"][0]["until"]
+        self.assertEqual(self.js("todo", "--at", until, lab="lab-c")[0]["id"], first)
+        self.ev("todo", "--at", "yesterday", lab="lab-c", ok=(2,))
+
+        self.ev("release", first, lab="lab-c", ok=(2,))  # carol holds no lease
+        self.ev("release", first, lab="lab-b")
+        self.ev("pull", str(self.dir / "lab-b"), lab="lab-c")
+        self.assertEqual(self.js("todo", lab="lab-c")[0]["leased"], [])
+        self.assertEqual(self.ev("fsck", lab="lab-c"), "ok")
+
     def test_keygen_and_trust(self):
         from evidence import signing
         if not signing.available():

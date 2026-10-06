@@ -62,6 +62,14 @@ class McpTest(unittest.TestCase):
         shown = json.loads(self.tool("show", id=q[:8])[0])
         self.assertEqual(shown["status"], "answered")
 
+        parent, _ = self.tool("ask", text="How dense are the primes?")
+        _, err = self.tool("lease", id=parent, duration="30m", note="thinking")
+        self.assertFalse(err)
+        todo = json.loads(self.tool("todo")[0])
+        self.assertTrue(todo[0]["leased"][0]["mine"])
+        self.assertFalse(self.tool("release", id=parent)[1])
+        self.assertEqual(json.loads(self.tool("todo")[0])[0]["leased"], [])
+
         text, err = self.tool("show", id="nope")
         self.assertTrue(err)
         self.assertIn("unknown id", text)

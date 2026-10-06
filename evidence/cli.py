@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import report, sandbox, signing
@@ -13,6 +15,7 @@ from .guide import GUIDE
 from .palomar import PALOMAR_ID, Palomar
 from .remote import open_source, serve
 from .store import KINDS, STATES, VERDICTS, EvidenceError, Store
+from .store import now as store_now
 
 MARK = {"proposed": "?", "reproduced": "✓", "refuted": "✗", "superseded": "→", "inconclusive": "~",
         "at-risk": "!", "answered": "✓", "open": "○"}
@@ -77,6 +80,41 @@ def cmd_review(args) -> None:
 
 def cmd_withdraw(args) -> None:
     print(Store.find().withdraw(args.review, note=args.note))
+
+
+def duration(text: str) -> timedelta:
+    """`90m`, `2h`, `1d`, `30s`, or a bare number of minutes."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([smhd]?)", text.strip())
+    if not m:
+        raise argparse.ArgumentTypeError(f"not a duration: {text!r} (e.g. 90m, 2h, 1d)")
+    return timedelta(**{{"s": "seconds", "m": "minutes", "": "minutes", "h": "hours", "d": "days"}[m[2]]:
+                        float(m[1])})
+
+
+def reference_time(text: str | None) -> str:
+    """The time leases are judged at: the given instant in UTC, else now. This is the only place
+    where reading the clock affects what a read command reports."""
+    if text is None:
+        return store_now()
+    try:
+        t = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        raise EvidenceError(f"not an ISO 8601 time: {text!r}") from None
+    if t.tzinfo is None:
+        raise EvidenceError("give the time zone of --at, e.g. 2026-10-06T12:00:00+00:00")
+    return t.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def cmd_lease(args) -> None:
+    store = Store.find()
+    h = store.lease(args.id, args.duration, note=args.note)
+    print(h)
+    print(f"until {store.get(h)['until']}", file=sys.stderr)
+
+
+def cmd_release(args) -> None:
+    for h in Store.find().release(args.id, note=args.note):
+        print(h)
 
 
 def cmd_verify(args) -> None:
@@ -241,9 +279,11 @@ def cmd_todo(args) -> None:
         me = store.author()
     except EvidenceError:
         me = None
-    data = store.todo(me)[:args.n]
+    data = store.todo(me, at=reference_time(args.at))[:args.n]
     lines = [f"{d['action']:<9} {short(d['id'])}  impact {d['impact']:<3} {d['statement']}\n"
-             f"{'':<10}{d['why']}" for d in data]
+             f"{'':<10}{d['why']}"
+             + "".join(f"\n{'':<10}leased by {'you' if l['mine'] else who(l['by'])} until {l['until']}"
+                       for l in d["leased"]) for d in data]
     emit(args, data, "\n".join(lines) or "nothing to do")
 
 
@@ -468,7 +508,21 @@ def parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("todo", parents=[js], help="what to check, prove or answer next, highest impact first")
     s.add_argument("-n", type=int, default=20)
+    s.add_argument("--at", metavar="TIME", help="judge leases at this ISO 8601 time (default: now)")
     s.set_defaults(func=cmd_todo)
+
+    s = sub.add_parser("lease", help="announce that you are working on a claim or question, "
+                       "so that others' todo steers elsewhere")
+    s.add_argument("id")
+    s.add_argument("--for", dest="duration", type=duration, default=timedelta(hours=2),
+                   metavar="DURATION", help="how long, e.g. 90m, 2h, 1d (default 2h, at most 7d)")
+    s.add_argument("--note", default="", help="what you are doing")
+    s.set_defaults(func=cmd_lease)
+
+    s = sub.add_parser("release", help="end your lease on a claim or question before it expires")
+    s.add_argument("id")
+    s.add_argument("--note", default="")
+    s.set_defaults(func=cmd_release)
 
     s = sub.add_parser("checkout", help="write a claim's evidence files into DIR")
     s.add_argument("id")

@@ -16,7 +16,7 @@ uv run --no-project --python 3.10 python -m unittest discover -s tests       # t
 
 ## Layout
 
-- `evidence/store.py`: the data model. Object schema and validation, the dependency `Graph` (ancestors and descendants as integer bitsets), recording (`ask`, `claim`, `review`, `withdraw`, signing in `_record`), `verify`, statuses of claims and questions, `search`, `todo`, `pull`, signature checks, `fsck`.
+- `evidence/store.py`: the data model. Object schema and validation, the dependency `Graph` (ancestors and descendants as integer bitsets), recording (`ask`, `claim`, `review`, `withdraw`, `lease`, `release`, signing in `_record`), `verify`, statuses of claims and questions, `leases`, `search`, `todo`, `pull`, signature checks, `fsck`.
 - `evidence/signing.py`: SSH signatures through `ssh-keygen -Y`.
 - `evidence/sandbox.py`: how `verify` isolates commands (seatbelt, bwrap, docker, none).
 - `evidence/remote.py`: sources for `pull` (store on disk, HTTP, git) and the read-only HTTP server.
@@ -33,6 +33,7 @@ Do not break these; the tests guard most of them.
 
 - Objects are immutable and named by the SHA-256 of their canonical JSON. Never edit or delete an object; record a new one. Optional fields are omitted when empty so that existing ids do not change. Changing what goes into an object (field names, evidence layout, Palomar's `to_claim`) changes ids, so say so in the commit message.
 - A claim's state is a pure function of the set of objects. Hence `pull` (set union) is commutative, associative and idempotent, and labs that have exchanged everything agree. Only the *trusted* count depends on local configuration. Nothing may depend on file order, the clock at read time, or other local state.
+- The one, narrow exception to the clock: leases. Whether a lease holds depends on the time, so `Store.leases` and `Store.todo` take the reference time as an argument and never read the clock; only `cli.py` supplies "now" (`ev todo --at` overrides it). Leases affect nothing but the order of `todo` and its `leased` field: never a status, `check`, a question's state, a report, or the property-test oracle.
 - Validate at the boundary: `pull` refuses, before writing anything, any object with a bad hash, a malformed structure (`invalid`), or a key without a valid signature. A bad object can never be removed, so it must never get in. Unknown object types are accepted and ignored, for forward compatibility.
 - Only evidence can refute. A failure of the environment (setup step, timeout, missing program, sandbox denial) is `inconclusive` and never changes a status.
 - `verify` never runs another lab's command unsandboxed unless explicitly told `--unsafe`. Tests that verify across labs pass `unsafe=True` so they behave the same on machines without a sandbox.

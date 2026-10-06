@@ -37,19 +37,16 @@ def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
               **{k: labels.count(k) for k in ("reproduced", "proposed", "refuted", "superseded", "at-risk")},
               "answered": sum(q.state == "answered" for q in qs.values())}
 
-    def q_line(h: str, depth: int) -> list[str]:
+    def q_line(h: str, depth: int) -> str:
         q = qs[h]
         best = next((a for a in q.answers if statuses[a].label == "reproduced"), None) or next(
             (a for a in q.answers if statuses[a].label == "proposed"), None)
         answer = f" Answer: {claims[best]['statement']}" if best else ""
-        out = [("  " * depth) + f"{questions[h]['text']} ({q.state}).{answer}"]
-        for s in q.subquestions:
-            out += q_line(s, depth + 1)
-        return out
+        return ("  " * depth) + f"{questions[h]['text']} ({q.state}).{answer}"
 
     roots = [h for h, q in questions.items() if not any(p in questions for p in q["parents"])]
-    out = [("Questions", [line for h in sorted(roots, key=lambda h: questions[h]["created"])
-                          for line in q_line(h, 0)])]
+    out = [("Questions", [q_line(h, d) for h, d in tree(sorted(roots, key=lambda h: questions[h]["created"]),
+                                                         lambda h: qs[h].subquestions)])]
     out.append(("Principal results", [
         f"{d['statement']} Reproduced by {plural(d['independent'], 'independent lab')}; "
         f"{plural(d['dependents'], 'claim rests', 'claims rest')} on it." for d in digest(store, ITEMS)]))
@@ -68,6 +65,20 @@ def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
     out.append(("At risk", [f"{claims[h]['statement']} Rests on {plural(len(s.at_risk_because), 'claim')} no "
                             f"longer standing." for h, s in statuses.items() if s.label == "at-risk"][:ITEMS]))
     return counts, [(t, items) for t, items in out if items]
+
+
+def tree(roots: list[str], children) -> list[tuple[str, int]]:
+    """Nodes in depth-first order with their depths, each once. A question may be part of several
+    larger ones, so following every path could take exponential time; nor may a deep chain exhaust
+    the stack."""
+    out, seen, stack = [], set(), [(h, 0) for h in reversed(roots)]
+    while stack:
+        h, depth = stack.pop()
+        if h not in seen:
+            seen.add(h)
+            out.append((h, depth))
+            stack.extend((c, depth + 1) for c in reversed(children(h)))
+    return out
 
 
 def plural(n: int, word: str, many: str | None = None) -> str:

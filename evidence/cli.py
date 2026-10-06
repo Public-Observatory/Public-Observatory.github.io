@@ -135,8 +135,9 @@ def cmd_show(args) -> None:
     out = [f"claim {h}", f"status   {state}", f"kind     {obj['kind']}",
            f"author   {who(obj['author'], trust)}", f"created  {obj['created']}"]
     if src := obj.get("source"):
-        out += [f"source   {src['registry']} {src['id']} v{src['version']}  {src['url']}",
-                f"         {', '.join(src['authors'])}; {src['repository']}@{src['commit'][:10]}"]
+        out += [f"source   {src.get('registry')} {src.get('id')} v{src.get('version')}  {src.get('url')}",
+                f"         {', '.join(map(str, src.get('authors') or []))}; "
+                f"{src.get('repository')}@{str(src.get('commit'))[:10]}"]
     out += ["", f"    {obj['statement']}", ""]
     for e in obj["evidence"]:
         detail = {"file": lambda: f"{e['name']} ({short(e['blob'])})",
@@ -144,7 +145,7 @@ def cmd_show(args) -> None:
                   "note": lambda: e["text"],
                   "reference": lambda: f"{e['relationship']}: {e['title'] or e['identifier']}"
                                        + (f" ({e['identifier']})" if e["title"] and e["identifier"] else "")
-                  }[e["kind"]]()
+                  }.get(e["kind"], lambda: json.dumps(e, ensure_ascii=False))()  # a kind from a newer version
         out.append(f"{'reference' if e['kind'] == 'reference' else 'evidence ' + e['kind']:<17} {detail}")
     for q in obj.get("answers", []):
         out.append(f"answers  {short(q)}  {questions[q]['text'] if q in questions else '(missing)'}")
@@ -181,17 +182,10 @@ def cmd_questions(args) -> None:
     data = [{"id": h, "text": q["text"], "status": qs[h].state, "parents": q["parents"],
              "answers": qs[h].answers, "subquestions": qs[h].subquestions}
             for h, q in sorted(questions.items(), key=lambda kv: kv[1]["created"])]
-    lines = []
-
-    def tree(h, depth, seen):
-        lines.append(f"{'  ' * depth}{MARK[qs[h].state]} {short(h)}  {questions[h]['text']}"
-                     + (f"  ({len(qs[h].answers)} answer(s))" if qs[h].answers else ""))
-        for s in qs[h].subquestions:
-            if s not in seen:
-                tree(s, depth + 1, seen | {s})
-
-    for h in (d["id"] for d in data if not any(p in questions for p in d["parents"])):
-        tree(h, 0, {h})
+    roots = [d["id"] for d in data if not any(p in questions for p in d["parents"])]
+    lines = [f"{'  ' * depth}{MARK[qs[h].state]} {short(h)}  {questions[h]['text']}"
+             + (f"  ({len(qs[h].answers)} answer(s))" if qs[h].answers else "")
+             for h, depth in report.tree(roots, lambda h: qs[h].subquestions)]
     emit(args, data, "\n".join(lines) or "no questions")
 
 

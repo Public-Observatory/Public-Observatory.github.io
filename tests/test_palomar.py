@@ -88,5 +88,15 @@ class PalomarTest(unittest.TestCase):
         self.assertEqual(self.store.get(hb)["depends_on"], [])
 
 
+    def test_forged_import_in_the_store_is_not_taken_for_the_entry(self):
+        # Anyone can write a claim that says it came from Palomar; the importer must not believe it.
+        forged = {**Palomar.to_claim(entry(A, title="Forged"), []), "statement": "Forged"}
+        bad = self.store.put_object(forged)
+        newer = self.store.put_object({**forged, "source": {**forged["source"], "version": 9}})
+        h = self.pal.import_entry(A)
+        self.assertNotIn(h, (bad, newer))
+        self.assertEqual(self.store.get(h)["statement"], "Base lemma")
+        self.assertEqual(self.store.statuses()[h].state, "reproduced")
+
 if __name__ == "__main__":
     unittest.main()

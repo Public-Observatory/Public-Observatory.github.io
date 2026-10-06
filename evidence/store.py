@@ -42,6 +42,8 @@ QUESTION_STATES = ("answered", "proposed", "open")
 # Exit codes of a shell that could not run the command at all.
 CANNOT_RUN = (126, 127)
 HEX = re.compile(r"[0-9a-f]{64}")
+# The fields of an author that say who they are.
+WHO = ("agent", "model", "lab", "key")
 
 
 # The fields each type of object must have, with their types. References are lists or single ids.
@@ -67,6 +69,9 @@ def invalid(obj) -> str | None:
     for f, t in fields.items():
         if not isinstance(obj.get(f), t):
             return f"{obj['type']} needs {f} ({t.__name__})"
+        # Identities are compared and hashed; a list or a number in their place would break every reader.
+        if f in ("author", "by") and not all(isinstance(obj[f].get(k, ""), str) for k in WHO):
+            return f"{obj['type']} has a malformed {f}"
     for f in REFERENCES[obj["type"]]:
         v = obj.get(f)
         refs = v if isinstance(v, list) else [] if v is None else [v]
@@ -78,13 +83,26 @@ def invalid(obj) -> str | None:
         for e in obj["evidence"]:
             if not isinstance(e, dict) or not isinstance(e.get("kind"), str):
                 return "malformed evidence"
-            if e["kind"] == "file" and not (isinstance(e.get("name"), str) and HEX.fullmatch(str(e.get("blob")))):
+            if e["kind"] == "file" and not (plain_name(e.get("name")) and HEX.fullmatch(str(e.get("blob")))):
                 return "malformed evidence file"
             if e["kind"] in ("command", "setup") and not isinstance(e.get("cmd"), str):
                 return "malformed evidence command"
+            if e["kind"] == "note" and not isinstance(e.get("text"), str):
+                return "malformed evidence note"
+            if e["kind"] == "reference" and not all(isinstance(e.get(k), str)
+                                                    for k in ("relationship", "title", "identifier")):
+                return "malformed evidence reference"
+        if not isinstance(obj.get("source", {}), dict):
+            return "malformed source"
     if obj["type"] == "review" and obj["verdict"] not in VERDICTS:
         return f"unknown verdict {obj['verdict']!r}"
     return None
+
+
+def plain_name(name) -> bool:
+    """Whether a file name stays inside the directory it is written to, on any platform."""
+    return (isinstance(name, str) and name not in ("", ".", "..", ".tmp")
+            and not any(c in name for c in "/\\\0"))
 
 
 def canonical(obj: dict) -> bytes:
@@ -100,12 +118,22 @@ def now() -> str:
 
 
 def identity(author: dict) -> str:
-    """Who stands behind a piece of work: their key, else their lab, else the agent."""
-    return author.get("key") or author.get("lab") or author.get("agent", "")
+    """Who stands behind a piece of work: their key, else their lab, else the agent. The kind is
+    part of the identity, so that an unsigned lab cannot take the name of a key."""
+    for k in ("key", "lab", "agent"):
+        if author.get(k):
+            return f"{k}:{author[k]}"
+    return ""
 
 
 def creator(obj: dict) -> dict:
     return obj.get("author") or obj.get("by") or {}
+
+
+def keys_named(obj: dict) -> set[str]:
+    """Every key an object speaks for. Both fields count, so that a decoy `author` cannot hide the
+    key in `by` from the signature check."""
+    return {a["key"] for a in (obj.get("author"), obj.get("by")) if isinstance(a, dict) and a.get("key")}
 
 
 def words(text: str) -> set[str]:
@@ -448,7 +476,9 @@ class Store:
         trust = self.trust()
 
         def name(author: dict) -> str:
-            return trust.get(author.get("key", ""), identity(author))
+            # Trust attaches to keys only; an unsigned author naming a trusted lab is just a name.
+            key = author.get("key", "")
+            return f"trusted:{trust[key]}" if key in trust else identity(author)
 
         g = self.graph()
         broken = g.mask(h for h in claims if own[h] in BROKEN)
@@ -456,7 +486,7 @@ class Store:
         for h, c in claims.items():
             by = {name(r["by"]) for r in by_claim[h] if r["verdict"] == "reproduced"} - {name(c["author"])}
             out[h] = Status(own[h], by_claim[h], g.members(g.up[h] & broken), len(by),
-                            len(by & set(trust.values())))
+                            sum(n.startswith("trusted:") for n in by))
         return out
 
     def question_statuses(self, statuses: dict[str, Status] | None = None) -> dict[str, QuestionStatus]:
@@ -581,9 +611,11 @@ class Store:
                 raise EvidenceError(f"corrupt object in {source.name}: {h}")
             try:
                 obj = json.loads(data)
-            except ValueError:
-                obj = None
-            if why := invalid(obj):
+                # Only the canonical encoding is stored, so any other would land under a wrong name.
+                why = invalid(obj) or (None if canonical(obj) == data else "not in canonical form")
+            except (ValueError, RecursionError):
+                why = "not JSON"
+            if why:
                 raise EvidenceError(f"malformed object in {source.name}: {h} ({why})")
             incoming[h] = obj
         if forged := self.unsigned(incoming):
@@ -639,7 +671,7 @@ class Store:
         self._remember_verified(h for h in good if h not in known)
         valid = {(s["object"], s["key"]) for h, s in sigs.items() if h not in bad}
         missing = [h for h, o in objects.items()
-                   if o["type"] != "signature" and (key := creator(o).get("key")) and (h, key) not in valid]
+                   if o["type"] != "signature" and any((h, key) not in valid for key in keys_named(o))]
         return sorted(bad + missing)
 
     def fsck(self) -> list[str]:

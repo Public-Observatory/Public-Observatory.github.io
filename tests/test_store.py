@@ -171,5 +171,36 @@ class StoreTest(unittest.TestCase):
         self.b.pull(c)
         self.assertEqual(self.b.statuses(), {})
 
+    def smuggle(self, data: bytes) -> Store:
+        """A store holding the given bytes as an object under their hash."""
+        c = Store.init(self.dir / f"c{digest(data)[:8]}", {"agent": "carol"})
+        c._write("objects", digest(data), data)
+        return c
+
+    def test_pull_refuses_non_canonical_or_unencodable_bytes(self):
+        # Re-encoding would store the object under a name that is not its hash.
+        for data in (b'{"type": "dataset"}', b'{"type":"dataset","x":"\\ud800"}', b"[" * 100000 + b"]" * 100000):
+            with self.subTest(data=data[:40]):
+                with self.assertRaises(EvidenceError):
+                    self.b.pull(self.smuggle(data))
+                self.assertEqual(Store(self.b.root).fsck(), [])
+
+    def test_pull_refuses_objects_that_would_break_reading_commands(self):
+        claim = {"type": "claim", "kind": "result", "statement": "s", "author": {"agent": "m"}, "depends_on": [],
+                 "created": "x", "evidence": []}
+        bad_objects = (
+            {**claim, "author": {"agent": "m", "key": ["not", "a", "string"]}},
+            {**claim, "author": {"agent": "m", "lab": 5}},
+            {**claim, "evidence": [{"kind": "note", "text": 5}]},
+            {**claim, "evidence": [{"kind": "reference", "relationship": "x"}]},
+            {**claim, "source": "palomar"},
+            *({**claim, "evidence": [{"kind": "file", "name": n, "blob": "0" * 64}]} for n in ("..", "", "a/b", "x\0")),
+        )
+        for bad in bad_objects:
+            with self.subTest(bad=bad):
+                with self.assertRaises(EvidenceError):
+                    self.b.pull(self.smuggle(json.dumps(bad, sort_keys=True, separators=(",", ":")).encode()))
+        self.b.search("s")
+
 if __name__ == "__main__":
     unittest.main()

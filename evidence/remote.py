@@ -69,7 +69,8 @@ def open_source(spec: str):
     if is_git(spec):
         url, _, sub = spec.partition("#")
         with tempfile.TemporaryDirectory() as tmp:
-            r = subprocess.run(["git", "clone", "-q", "--depth", "1", url, tmp], capture_output=True, text=True)
+            # `--` keeps a URL beginning with a dash from being read as an option such as --upload-pack.
+            r = subprocess.run(["git", "clone", "-q", "--depth", "1", "--", url, tmp], capture_output=True, text=True)
             if r.returncode:
                 raise EvidenceError(f"git clone {url}: {r.stderr.strip()}")
             yield local(Path(tmp) / sub)

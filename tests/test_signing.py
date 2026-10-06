@@ -73,5 +73,41 @@ class SigningTest(unittest.TestCase):
         self.assertTrue(any("corrupt" in p for p in Store(self.a.root).fsck()))
 
 
+    def test_second_author_field_does_not_evade_signature_check(self):
+        # A review whose `by` names lab-b's key, with an extra unsigned `author` to look at instead.
+        h = self.a.claim("x", cmd="true")
+        mallory = Store.init(self.dir / "m", {"agent": "mallory"})
+        mallory.pull(self.a)
+        mallory.put_object({"type": "review", "claim": h, "verdict": "reproduced", "by": self.b.author(),
+                            "author": {"agent": "mallory"}, "method": "", "note": "", "created": "x"})
+        with self.assertRaises(EvidenceError):
+            self.a.pull(mallory)
+
+    def test_unsigned_name_does_not_count_as_trusted_key(self):
+        h = self.a.claim("x", cmd="true")
+        self.a.configure(trust={self.b.author()["key"]: "lab-b"})
+        mallory = Store.init(self.dir / "m", {"agent": "mallory"})
+        mallory.pull(self.a)
+        mallory.put_object({"type": "review", "claim": h, "verdict": "reproduced", "by": {"lab": "lab-b"},
+                            "method": "", "note": "", "created": "x"})
+        self.a.pull(mallory)
+        self.assertEqual((self.a.statuses()[h].independent, self.a.statuses()[h].trusted), (1, 0))
+
+    def test_unsigned_lab_named_like_a_key_cannot_withdraw_or_pass_as_own(self):
+        h = self.a.claim("x", cmd="true")
+        self.b.pull(self.a)
+        r = self.b.verify(h, unsafe=True)[0]
+        mallory = Store.init(self.dir / "m", {"agent": "mallory"})
+        mallory.pull(self.b)
+        mallory.put_object({"type": "withdrawal", "review": r, "by": {"lab": self.b.author()["key"]},
+                            "note": "", "created": "x"})
+        own = mallory.put_object({"type": "claim", "kind": "result", "statement": "mine, honestly",
+                                  "author": {"lab": self.b.author()["key"]}, "evidence": [
+                                      {"kind": "command", "cmd": "true"}], "depends_on": [], "created": "x"})
+        self.b.pull(mallory)
+        self.assertNotIn(r, self.b.withdrawn())
+        with self.assertRaises(EvidenceError):
+            self.b.verify(own, sandbox_mode="none")
+
 if __name__ == "__main__":
     unittest.main()

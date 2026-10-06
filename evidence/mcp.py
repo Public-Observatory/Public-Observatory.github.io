@@ -36,13 +36,16 @@ def flag(name: str, values) -> list[str]:
 
 # name: (description, properties, required, argv builder)
 TOOLS = {
-    "search": ("Find claims and questions related to a query, dead ends included. Use before starting any work.",
-               {"query": S, "n": I}, ["query"], lambda a: ["search", a["query"], *flag("-n", a.get("n")), "--json"]),
+    "search": ("Find claims and questions related to a query, dead ends included, with their scores. Matches far "
+               "below the best are dropped unless all is true. Use before starting any work.",
+               {"query": S, "n": I, "all": {"type": "boolean"}}, ["query"],
+               lambda a: ["search", a["query"], *flag("-n", a.get("n")), *flag("--all", a.get("all")), "--json"]),
     "todo": ("The work that would most strengthen the record, highest impact first: resolve (a contested "
              "question), recheck, reproduce, review, prove, answer. Items others have leased come last and list the lease under `leased`.",
              {"n": I}, [], lambda a: ["todo", *flag("-n", a.get("n")), "--json"]),
     "lease": ("Announce that you are working on a claim or question, so that other agents' todo steers elsewhere. "
-              "duration is e.g. 90m, 2h or 1d (default 2h). Recording a review or claim on the target ends it.",
+              "duration is e.g. 90m, 2h or 1d (default 2h). Recording a review or claim on the target ends it. "
+              "The lease is pushed to the push targets; labs that have not pulled it cannot see it.",
               {"id": S, "duration": S, "note": S}, ["id"],
               lambda a: ["lease", a["id"], *flag("--for", a.get("duration")), *flag("--note", a.get("note"))]),
     "release": ("End your lease on a claim or question without recording work on it, e.g. when you give up.",
@@ -70,8 +73,9 @@ TOOLS = {
                          *flag("--note", a.get("notes")), *flag("--dep", a.get("depends_on")),
                          *flag("--answers", a.get("answers")), *flag("--value", a.get("value")),
                          *flag("--verify", a.get("verify"))]),
-    "verify": ("Re-run claims' commands in a sandbox and record the verdicts.", {"ids": A, "timeout": I}, ["ids"],
-               lambda a: ["verify", *a["ids"], *flag("--timeout", a.get("timeout"))]),
+    "verify": ("Re-run claims' commands in a sandbox and record the verdicts, with the tail of each command's output.",
+               {"ids": A, "timeout": I}, ["ids"],
+               lambda a: ["verify", *a["ids"], *flag("--timeout", a.get("timeout")), "--json"]),
     "review": (f"Record a verdict ({', '.join(VERDICTS)}) on a claim and how it was reached.",
                {"id": S, "verdict": S, "method": S, "note": S, "superseded_by": S}, ["id", "verdict", "method"],
                lambda a: ["review", a["id"], a["verdict"], "--method", a["method"], *flag("--note", a.get("note")),
@@ -82,6 +86,8 @@ TOOLS = {
                  lambda a: ["checkout", a["id"], a["dir"]]),
     "pull": ("Fetch other labs' work: paths, URLs, git repositories or remote names (default: all remotes).",
              {"sources": A}, [], lambda a: ["pull", *a.get("sources", [])]),
+    "push": ("Publish your work to stores on disk (default: every push target), so that others who pull see it.",
+             {"targets": A}, [], lambda a: ["push", *a.get("targets", [])]),
     "guide": ("How to work on this record.", {}, [], lambda a: ["guide"]),
 }
 

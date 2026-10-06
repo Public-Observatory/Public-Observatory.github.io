@@ -17,6 +17,9 @@ from .remote import open_source, serve
 from .store import KINDS, STATES, VERDICTS, EvidenceError, Store, format_value
 from .store import now as store_now
 
+# Lines of a command's output that `ev verify` prints; the review keeps its last 2000 characters.
+OUTPUT_LINES = 5
+
 MARK = {"proposed": "?", "reproduced": "✓", "refuted": "✗", "superseded": "→", "inconclusive": "~",
         "at-risk": "!", "answered": "✓", "open": "○", "contested": "≠"}
 
@@ -114,11 +117,24 @@ def cmd_lease(args) -> None:
     h = store.lease(args.id, args.duration, note=args.note)
     print(h)
     print(f"until {store.get(h)['until']}", file=sys.stderr)
+    publish(store)
 
 
 def cmd_release(args) -> None:
-    for h in Store.find().release(args.id, note=args.note):
+    store = Store.find()
+    for h in store.release(args.id, note=args.note):
         print(h)
+    publish(store)
+
+
+def publish(store: Store) -> None:
+    """Push to every push target, since a lease or release is seen only by labs that have pulled it.
+    The object is recorded whatever happens, so a target that cannot be reached is only reported."""
+    for name in store.config().get("push", []):
+        try:
+            push_to(store, name, out=sys.stderr)  # stdout carries only the ids
+        except (EvidenceError, OSError) as e:
+            print(f"ev: not published to {name}: {e}", file=sys.stderr)
 
 
 def cmd_verify(args) -> None:
@@ -126,13 +142,24 @@ def cmd_verify(args) -> None:
 
 
 def verify(ids: list[str], args, store: Store) -> None:
-    """Exit with the worst outcome: 1 if anything was refuted, else 3 if anything was inconclusive."""
-    worst = 0
+    """Exit with the worst outcome: 1 if anything was refuted, else 3 if anything was inconclusive.
+
+    The tail of the command's output is printed, since it usually says why a claim failed."""
+    worst, data = 0, []
+    as_json = getattr(args, "json", False)
     for i in ids:
         h, verdict = store.verify(i, timeout=args.timeout, sandbox_mode=args.sandbox, unsafe=args.unsafe)
-        prefix = f"{short(store.resolve(i))}  " if len(ids) > 1 else ""
-        print(f"{prefix}{MARK[verdict]} {verdict}  (review {short(h)})")
+        review = store.get(h)
+        data.append({"claim": review["claim"], "verdict": verdict, "review": h, "method": review["method"],
+                     "output": review["note"]})
+        if not as_json:
+            prefix = f"{short(review['claim'])}  " if len(ids) > 1 else ""
+            print(f"{prefix}{MARK[verdict]} {verdict}  (review {short(h)}): {review['method']}")
+            for line in [l for l in review["note"].splitlines() if l.strip()][-OUTPUT_LINES:]:
+                print(f"    {line}")
         worst = max(worst, {"reproduced": 0, "inconclusive": 1, "refuted": 2}[verdict])
+    if as_json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
     if worst:
         sys.exit({1: 3, 2: 1}[worst])
 
@@ -272,7 +299,7 @@ def cmd_search(args) -> None:
     store = Store.find()
     statuses, qs = store.statuses(), store.question_statuses()
     data = []
-    for score, h in store.search(args.query, args.n):
+    for score, h in store.search(args.query, args.n, **({"cutoff": 0} if args.all else {})):
         o = store.get(h)
         if o["type"] == "claim":
             data.append({"id": h, "type": "claim", "score": round(score, 3), "status": statuses[h].label,
@@ -281,8 +308,8 @@ def cmd_search(args) -> None:
         else:
             data.append({"id": h, "type": "question", "score": round(score, 3), "status": qs[h].state,
                          "kind": "question", "statement": o["text"]})
-    lines = [f"{MARK[d['status']]} {short(d['id'])}  {d['status']:<10} {kind_tag(d['kind'])}{d['statement']}"
-             for d in data]
+    lines = [f"{d['score']:6.2f}  {MARK[d['status']]} {short(d['id'])}  {d['status']:<10} "
+             f"{kind_tag(d['kind'])}{d['statement']}" for d in data]
     emit(args, data, "\n".join(lines) or "nothing related on record")
 
 
@@ -294,10 +321,10 @@ def cmd_todo(args) -> None:
     except EvidenceError:
         me = None
     data = store.todo(me, at=reference_time(args.at))[:args.n]
-    lines = [f"{d['action']:<9} {short(d['id'])}  impact {d['impact']:<3} {d['statement']}\n"
-             f"{'':<10}{d['why']}"
+    lines = [f"{d['action']:<9} {short(d['id'])}  impact {d['impact']:<3} {d['why']}\n"
+             f"{'':<10}{d['statement']}"
              + "".join(f"\n{'':<10}leased by {'you' if l['mine'] else who(l['by'])} until {l['until']}"
-                       for l in d["leased"]) for d in data]
+                       + (f": {l['note']}" if l["note"] else "") for l in d["leased"]) for d in data]
     emit(args, data, "\n".join(lines) or "nothing to do")
 
 
@@ -320,7 +347,7 @@ def cmd_whoami(args) -> None:
     store = Store.find()
     author = store.author()
     data = {"author": author, "store": str(store.root), "sandbox": store.sandbox_mode(),
-            "remotes": store.config().get("remotes", {}),
+            "remotes": store.config().get("remotes", {}), "push": store.config().get("push", []),
             "trusted": {name: signing.fingerprint(k) for k, name in store.trust().items()}}
     if key := author.get("key"):
         data["fingerprint"] = signing.fingerprint(key)
@@ -351,25 +378,34 @@ def cmd_pull(args) -> None:
 
 def cmd_push(args) -> None:
     store = Store.find()
-    remotes = store.config().get("remotes", {})
-    spec = remotes.get(args.target, args.target)
+    targets = args.targets or store.config().get("push", [])
+    if not targets:
+        raise EvidenceError("nothing to push to: name a store or add one with `ev remote add NAME PATH --push`")
+    for t in targets:
+        push_to(store, t)
+
+
+def push_to(store: Store, name: str, out=None) -> None:
+    spec = store.config().get("remotes", {}).get(name, name)
     with open_source(spec) as target:
         if not isinstance(target, Store):
             raise EvidenceError("push writes to a store on disk; others pull from `ev serve`")
-        print(f"pushed {store.push(target)} new object(s) to {target.root}")
+        print(f"pushed {store.push(target)} new object(s) to {target.root}", file=out or sys.stdout)
 
 
 def cmd_remote(args) -> None:
     store = Store.find()
     remotes = dict(store.config().get("remotes", {}))
+    push = [n for n in store.config().get("push", []) if n != getattr(args, "name", None)]
     if args.action == "add":
         remotes[args.name] = args.spec
+        push += [args.name] if args.push else []
     elif args.action == "remove":
         if remotes.pop(args.name, None) is None:
             raise EvidenceError(f"no remote {args.name}")
-    store.configure(remotes=remotes)
+    store.configure(remotes=remotes, push=push)
     for name, spec in remotes.items():
-        print(f"{name}\t{spec}")
+        print(f"{name}\t{spec}" + ("\tpush" if name in push else ""))
 
 
 def cmd_trust(args) -> None:
@@ -490,7 +526,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--note", default="")
     s.set_defaults(func=cmd_withdraw)
 
-    s = sub.add_parser("verify", help="re-run a claim's command and record the verdict "
+    s = sub.add_parser("verify", parents=[js], help="re-run a claim's command and record the verdict "
                        "(exit 1 refuted, 3 inconclusive)")
     s.add_argument("ids", nargs="+", metavar="id")
     s.add_argument("--timeout", type=int, default=600)
@@ -512,13 +548,14 @@ def parser() -> argparse.ArgumentParser:
     s = sub.add_parser("check", parents=[js], help="flag claims built on refuted work (exit 1 if any)")
     s.set_defaults(func=cmd_check)
 
-    s = sub.add_parser("digest", parents=[js], help="what a human should read")
+    s = sub.add_parser("digest", parents=[js], help="the report in short: the results most work builds on")
     s.add_argument("-n", type=int, default=5)
     s.set_defaults(func=cmd_digest)
 
     s = sub.add_parser("search", parents=[js], help="find related claims and questions, dead ends included")
     s.add_argument("query")
     s.add_argument("-n", type=int, default=10)
+    s.add_argument("--all", action="store_true", help="keep matches scoring far below the best")
     s.set_defaults(func=cmd_search)
 
     s = sub.add_parser("todo", parents=[js], help="what to check, prove or answer next, highest impact first")
@@ -561,15 +598,17 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("sources", nargs="*", help="default: every remote")
     s.set_defaults(func=cmd_pull)
 
-    s = sub.add_parser("push", help="copy our objects into another store on disk")
-    s.add_argument("target")
+    s = sub.add_parser("push", help="copy our objects into other stores on disk")
+    s.add_argument("targets", nargs="*", metavar="target", help="default: every push target")
     s.set_defaults(func=cmd_push)
 
-    s = sub.add_parser("remote", help="name the stores you pull from")
+    s = sub.add_parser("remote", help="name the stores you pull from and push to")
     rem = s.add_subparsers(dest="action", required=True)
     t = rem.add_parser("add")
     t.add_argument("name")
     t.add_argument("spec", help="path, http(s) URL, or git URL (URL#subdir)")
+    t.add_argument("--push", action="store_true",
+                   help="a store on disk that `ev push`, `ev lease` and `ev release` publish to")
     t.set_defaults(func=cmd_remote)
     t = rem.add_parser("remove")
     t.add_argument("name")

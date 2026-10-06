@@ -92,6 +92,37 @@ class CliTest(unittest.TestCase):
         out = self.ev("checkout", h, str(self.dir / "work"), lab="lab-a")
         self.assertTrue(Path(out).is_file())
 
+    def test_search_scores_and_drops_weak_matches(self):
+        dead = self.ev("claim", "Trial division is too slow beyond 10^7.", "--kind", "negative", lab="lab-a")
+        q = self.ev("ask", "Is trial division fast enough for primes below 10^8?", lab="lab-a")
+        for s in ("Water is wet.", "The sky is blue.", "Grass is green."):
+            self.ev("claim", s, lab="lab-a")
+        hits = self.js("search", "is trial division fast enough?", lab="lab-a")
+        self.assertEqual({h["id"] for h in hits}, {dead, q})
+        self.assertTrue(all(h["score"] > 0 for h in hits))
+        self.assertEqual(len(self.js("search", "is trial division fast enough?", "--all", lab="lab-a")), 5)
+        line = self.ev("search", "trial division", lab="lab-a").splitlines()[0]
+        self.assertRegex(line, r"^\s*\d+\.\d\d  ")
+
+    def test_verify_shows_the_output(self):
+        h = self.ev("claim", "There are 169 primes below 1000.", "--file", str(DEMO),
+                    "--cmd", "python3 primes.py 1000 169", lab="lab-a")
+        out = self.ev("verify", h, lab="lab-a", ok=(1,))
+        self.assertIn("refuted", out)
+        self.assertIn("168", out)  # the program's own report of what it counted
+        [v] = json.loads(self.ev("verify", h, "--json", lab="lab-a", ok=(1,)))
+        self.assertEqual((v["claim"], v["verdict"]), (h, "refuted"))
+        self.assertIn("168", v["output"])
+
+    def test_todo_text_puts_action_id_impact_and_why_on_one_line(self):
+        h = self.ev("claim", "x", "--cmd", "true", lab="lab-a")
+        self.ev("pull", str(self.dir / "lab-a"), lab="lab-b")
+        [item] = self.js("todo", lab="lab-b")
+        self.assertEqual(set(item), {"action", "id", "statement", "impact", "why", "leased"})
+        first = self.ev("todo", lab="lab-b").splitlines()[0]
+        for part in ("reproduce", h[:10], "impact 1", item["why"]):
+            self.assertIn(part, first)
+
     def test_errors_exit_2(self):
         self.ev("show", "nope", lab="lab-a", ok=(2,))
         self.ev("review", "nope", "refuted", "--method", "m", lab="lab-a", ok=(2,))
@@ -204,11 +235,35 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.js("todo", "--at", until, lab="lab-c")[0]["id"], first)
         self.ev("todo", "--at", "yesterday", lab="lab-c", ok=(2,))
 
+        self.assertIn("re-running", self.ev("todo", lab="lab-c"))
+        self.assertEqual(todo[1]["leased"][0]["note"], "re-running")
         self.ev("release", first, lab="lab-c", ok=(2,))  # carol holds no lease
         self.ev("release", first, lab="lab-b")
         self.ev("pull", str(self.dir / "lab-b"), lab="lab-c")
         self.assertEqual(self.js("todo", lab="lab-c")[0]["leased"], [])
         self.assertEqual(self.ev("fsck", lab="lab-c"), "ok")
+
+    def test_lease_and_release_publish_to_push_targets(self):
+        shared = self.dir / "shared"
+        self.ev("init", str(shared), "--agent", "nobody")
+        x = self.ev("claim", "x", "--cmd", "true", lab="lab-a")
+        self.ev("push", lab="lab-a", ok=(2,))  # no push target yet
+        self.ev("remote", "add", "shared", str(shared), "--push", lab="lab-a")
+        self.assertEqual(self.js("whoami", lab="lab-a")["push"], ["shared"])
+        self.ev("push", lab="lab-a")
+        self.ev("remote", "add", "shared", str(shared), lab="lab-b")
+        self.ev("pull", lab="lab-b")
+        self.ev("lease", x, lab="lab-b")  # lab-b has no push target: the lease stays at home
+        self.assertEqual(self.js("todo", lab="lab-a")[0]["leased"], [])
+        self.ev("remote", "add", "shared", str(shared), "--push", lab="lab-b")
+        self.ev("lease", x, "--note", "again", lab="lab-b")
+        self.ev("pull", lab="lab-a")
+        self.assertEqual(self.js("todo", lab="lab-a")[0]["leased"][0]["note"], "again")
+        self.ev("release", x, lab="lab-b")
+        self.ev("pull", lab="lab-a")
+        self.assertEqual(self.js("todo", lab="lab-a")[0]["leased"], [])
+        self.ev("remote", "remove", "shared", lab="lab-b")
+        self.assertEqual(self.js("whoami", lab="lab-b")["push"], [])
 
     def test_keygen_and_trust(self):
         from evidence import signing

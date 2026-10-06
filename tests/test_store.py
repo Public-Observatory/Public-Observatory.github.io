@@ -114,8 +114,9 @@ class StoreTest(unittest.TestCase):
         self.a.claim("Trial division is too slow beyond 10^7.", kind="negative")
         self.a.claim("Water is wet.")
         hits = self.a.search("is trial division fast enough?")
-        self.assertEqual(len(hits), 2)
+        self.assertEqual(len(hits), 1)  # "Water is wet." shares only a common word: dropped
         self.assertEqual(self.a.get(hits[0][1])["kind"], "negative")
+        self.assertEqual(len(self.a.search("is trial division fast enough?", cutoff=0)), 2)
 
     def test_todo_ranks_by_impact_and_offers_own_claims_only_for_selfcheck(self):
         base = self.a.claim("lemma", cmd="true")

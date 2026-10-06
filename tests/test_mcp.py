@@ -49,7 +49,7 @@ class McpTest(unittest.TestCase):
         self.assertIn("ev search", init["instructions"])
         self.rpc("notifications/initialized", notify=True)
         names = {t["name"] for t in self.rpc("tools/list")["result"]["tools"]}
-        self.assertTrue({"search", "todo", "claim", "verify", "ask"} <= names)
+        self.assertTrue({"search", "todo", "claim", "verify", "ask", "push"} <= names)
 
         q, err = self.tool("ask", text="How many primes are below 100?")
         self.assertFalse(err)

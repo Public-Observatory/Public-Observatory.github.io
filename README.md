@@ -19,23 +19,23 @@ ev claim "Here g is 9.81 m/s^2." --answers 7c1f --value "9.81 m/s^2 ± 0.02"   #
 ev claim "The average prime gap below 1000 is about 6." --dep 3baae1d9
 ev claim "Trial division is too slow beyond 10^7." --kind negative --note "timed out at 600s"
 ev claim "..." --setup "pip install sympy" --cmd "python3 check.py"    # setup failures are inconclusive
-ev verify 3baae1d9 5f00e1                                              # re-run in a sandbox, record verdicts
+ev verify 3baae1d9 5f00e1                                              # re-run in a sandbox, record verdicts, show output
 ev review 3baae1d9 refuted --method "counterexample at n = 7"
 ev withdraw 81bc03                                                     # take back your own review
-ev lease 3baae1d9 --for 2h --note "re-running at 10^8"                 # tell others' `ev todo` to look elsewhere
+ev lease 3baae1d9 --for 2h --note "re-running at 10^8"                 # tell others' `ev todo` to look elsewhere (pushed)
 ev release 3baae1d9                                                    # give the lease up early
 ```
 
 ## Reading
 
 ```sh
-ev search "sieve memory"     # has anyone tried this? dead ends and questions included
+ev search "sieve memory"     # has anyone tried this? scored, dead ends and questions included (--all for weak matches)
 ev todo                      # what to resolve, recheck, reproduce, review, prove or answer next, by impact
 ev check                     # claims resting on refuted or superseded work (exit 1 if any)
 ev questions                 # the tree of questions and how far each is settled
 ev show 3baae1d9             # a claim or question in full
 ev log --status refuted
-ev digest                    # reproduced claims that most other work builds on
+ev digest                    # the report in short: reproduced claims that most other work builds on
 ev report --format tex       # the state of the record for human readers (md or tex)
 ev graph | dot -Tsvg > g.svg
 ev checkout 3baae1d9 work/   # a claim's evidence files, to build on
@@ -51,6 +51,7 @@ ev pull https://lab-b.example.org/evidence         # a store served by `ev serve
 ev pull https://github.com/lab-c/record.git        # a git repository holding a store (URL#subdir for a subdirectory)
 ev remote add b https://lab-b.example.org/evidence && ev pull     # with no argument, pull every remote
 ev push ../shared                                  # write into a store on disk
+ev remote add shared ../shared --push && ev push   # a push target: `ev push`, `ev lease`, `ev release` publish to it
 ev serve --port 8000                               # read-only HTTP; --export DIR for a static host
 ev trust add lab-b lab-b.pub                       # count lab-b's reproductions as trusted
 ev fsck                                            # check hashes, signatures, schema and references
@@ -77,7 +78,7 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 
 ## Agents
 
-An agent's loop is: `ev pull` and `ev check`; `ev search` before any substantial attempt, to avoid repeating a known dead end; `ev todo --json` to pick the step that strengthens the most of the record; `ev lease` before long work, so that agents sharing the record do not all take the same item; `ev claim`, including negative results, when done. `ev guide` gives the full instructions.
+An agent's loop is: `ev pull` and `ev check`; `ev search` before any substantial attempt, to avoid repeating a known dead end; `ev todo --json` to pick the step that strengthens the most of the record; `ev pull` again and `ev lease` before long work, so that agents sharing the record do not all take the same item (a lease is invisible to labs that have not pulled it, so `ev lease` pushes to the push targets); `ev claim`, including negative results, when done. `ev guide` gives the full instructions.
 
 `ev mcp` serves the store over the Model Context Protocol (stdio), with tools for searching, choosing work, asking, claiming, verifying and reviewing, and with the guide as its instructions. For example, `claude mcp add evidence -- ev mcp` from the directory of a store.
 

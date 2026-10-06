@@ -57,6 +57,8 @@ TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00")
 # others for long. It is clamped when read rather than refused when pulled, so that a later version
 # may allow longer leases without its objects being refused here.
 LEASE_LIMIT = timedelta(days=7)
+# `search` drops matches scoring below this fraction of the best, which share only common words.
+SEARCH_CUTOFF = 0.3
 
 # A claim may carry the value it gives as its answer, either exact or a measured quantity:
 #     {"exact": 168}   {"exact": true}   {"exact": "Riemann"}
@@ -749,8 +751,12 @@ class Store:
 
     # ------------------------------------------------------------- navigation
 
-    def search(self, query: str, limit: int = 10) -> list[tuple[float, str]]:
-        """Claims and questions ranked by shared rare words with the query, dead ends included."""
+    def search(self, query: str, limit: int = 10, cutoff: float = SEARCH_CUTOFF) -> list[tuple[float, str]]:
+        """Claims and questions ranked by shared rare words with the query, dead ends included.
+
+        A match scoring below `cutoff` times the best is dropped: it shares only common words with
+        the query, and listing it would make every record look related.
+        """
         docs = {h: words(" ".join([c["statement"]] + [e.get("text", "") for e in c["evidence"]]))
                 for h, c in self.objects("claim").items()}
         docs.update({h: words(q["text"]) for h, q in self.objects("question").items()})
@@ -760,7 +766,8 @@ class Store:
                 df[w] = df.get(w, 0) + 1
         q = words(query)
         scored = [(sum(math.log(1 + len(docs) / df[w]) for w in q & d), h) for h, d in docs.items()]
-        return sorted((s for s in scored if s[0] > 0), reverse=True)[:limit]
+        best = max((s for s, _ in scored), default=0)
+        return sorted((s for s in scored if s[0] > 0 and s[0] >= cutoff * best), reverse=True)[:limit]
 
     def todo(self, me: dict | None = None, at: str | datetime | None = None) -> list[dict]:
         """Work that would most strengthen the record, highest impact first.
@@ -842,7 +849,7 @@ class Store:
             add("answer", h, q["text"], 1 + len(ancestors(h)), "open question; claim an answer with --answers")
         leases = self.leases(at) if at is not None else {}
         for i in items:
-            i["leased"] = [{"id": lease["id"], "by": lease["by"], "until": lease["until"],
+            i["leased"] = [{"id": lease["id"], "by": lease["by"], "until": lease["until"], "note": lease["note"],
                             "mine": mine is not None and identity(lease["by"]) == mine}
                            for lease in leases.get(i["id"], [])]
         priority = {"resolve": 0, "recheck": 1, "selfcheck": 2, "reproduce": 3, "review": 4, "prove": 5, "answer": 6}

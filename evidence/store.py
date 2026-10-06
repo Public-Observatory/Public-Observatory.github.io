@@ -2,7 +2,8 @@
 
 Layout of a store (``.evidence/``)::
 
-    objects/<id[:2]>/<id[2:]>.json   questions, claims, reviews, withdrawals, signatures (immutable)
+    objects/<id[:2]>/<id[2:]>.json   questions, claims, reviews, withdrawals, leases, releases,
+                                     signatures (immutable)
     blobs/<hash[:2]>/<hash[2:]>      evidence files (immutable)
     config.json                      author, signing key, trusted keys, remotes (local, never shared)
     cache/                           verified signatures (local, can be deleted)
@@ -11,6 +12,12 @@ Every object is identified by the SHA-256 of its canonical JSON, so two stores m
 the union of their files: there are no conflicts. Every status is a function of the set of objects
 alone, so stores that hold the same objects agree. The one exception is local policy about whose
 reproductions to count as trusted, which lives in config.json.
+
+Leases are advice, not record. An agent announces that it is working on a claim or question so
+that other agents' `todo` steers elsewhere; the announcement expires, so whether it still holds
+depends on the time. Leases therefore never enter a status, `check`, a report or a question's
+state. They affect only the order of `todo`, and only when the caller passes the reference time
+explicitly, so that every function here remains a function of its arguments and the objects.
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ import platform
 import re
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import sandbox, signing
@@ -42,6 +49,13 @@ QUESTION_STATES = ("answered", "proposed", "open")
 # Exit codes of a shell that could not run the command at all.
 CANNOT_RUN = (126, 127)
 HEX = re.compile(r"[0-9a-f]{64}")
+# The timestamps of a lease must have the one form `now` writes, so that every version of Python
+# parses them alike and every lab reads the same expiry.
+TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00")
+# A longer lease is read as this long, so that a crashed or careless agent cannot keep work from
+# others for long. It is clamped when read rather than refused when pulled, so that a later version
+# may allow longer leases without its objects being refused here.
+LEASE_LIMIT = timedelta(days=7)
 
 
 # The fields each type of object must have, with their types. References are lists or single ids.
@@ -51,9 +65,11 @@ SCHEMA = {
     "review": {"claim": str, "verdict": str, "by": dict, "method": str, "note": str, "created": str},
     "withdrawal": {"review": str, "by": dict, "note": str, "created": str},
     "signature": {"object": str, "key": str, "signature": str},
+    "lease": {"target": str, "by": dict, "until": str, "note": str, "created": str},
+    "release": {"lease": str, "by": dict, "note": str, "created": str},
 }
 REFERENCES = {"question": ("parents",), "claim": ("depends_on", "answers"), "review": ("claim", "superseded_by"),
-              "withdrawal": ("review",), "signature": ("object",)}
+              "withdrawal": ("review",), "signature": ("object",), "lease": ("target",), "release": ("lease",)}
 
 
 def invalid(obj) -> str | None:
@@ -84,6 +100,8 @@ def invalid(obj) -> str | None:
                 return "malformed evidence command"
     if obj["type"] == "review" and obj["verdict"] not in VERDICTS:
         return f"unknown verdict {obj['verdict']!r}"
+    if obj["type"] == "lease" and not (timestamp(obj["created"]) and timestamp(obj["until"])):
+        return "lease needs created and until in the form YYYY-MM-DDTHH:MM:SS+00:00"
     return None
 
 
@@ -97,6 +115,16 @@ def digest(data: bytes) -> str:
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def timestamp(text) -> datetime | None:
+    """A timestamp in the form `now` writes, or None."""
+    if not (isinstance(text, str) and TIME.fullmatch(text)):
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:  # e.g. month 13
+        return None
 
 
 def identity(author: dict) -> str:
@@ -371,6 +399,34 @@ class Store:
         return self._record({"type": "withdrawal", "review": review, "by": me, "note": note,
                              "created": now()})
 
+    def lease(self, target: str, duration: timedelta, note: str = "") -> str:
+        """Announce that we are working on a claim or question, for `duration` from now.
+
+        The writer fixes the expiry as an instant, so that every reader compares the same instant
+        with its own clock and none has to guess how long was meant. A lease ends earlier when its
+        holder releases it or records work on the target (see `leases`); renewing is leasing again.
+        """
+        target = self.resolve(target)
+        if self.get(target)["type"] not in ("claim", "question"):
+            raise EvidenceError("only a claim or a question can be leased")
+        if not timedelta(0) < duration <= LEASE_LIMIT:
+            raise EvidenceError(f"a lease must last more than nothing and at most {LEASE_LIMIT.days} days")
+        start = timestamp(now())
+        return self._record({"type": "lease", "target": target, "by": self.author(),
+                             "until": (start + duration).isoformat(), "note": note,
+                             "created": start.isoformat()})
+
+    def release(self, target: str, note: str = "") -> list[str]:
+        """End those of our leases on a target that still hold. Only a lease's holder can release it."""
+        target = self.resolve(target)
+        me = self.author()
+        held = [lease["id"] for lease in self.leases(now()).get(target, [])
+                if identity(lease["by"]) == identity(me)]
+        if not held:
+            raise EvidenceError(f"you hold no lease on {target[:10]}")
+        return [self._record({"type": "release", "lease": h, "by": me, "note": note, "created": now()})
+                for h in held]
+
     # ----------------------------------------------------------- verification
 
     def sandbox_mode(self, requested: str | None = None) -> str:
@@ -478,6 +534,44 @@ class Store:
             qs.state = "answered" if "reproduced" in labels else "proposed" if "proposed" in labels else "open"
         return out
 
+    def leases(self, at: str | datetime) -> dict[str, list[dict]]:
+        """The leases that hold at the time `at`, by target.
+
+        A lease holds until the earlier of its `until` and its `created` plus LEASE_LIMIT, unless
+        its holder has released it or has since recorded work on the target: a review of the
+        claim, or a claim that answers the question or builds on the claim. Since finishing the
+        work ends the lease, an agent need not remember to release; since leases expire, one that
+        crashes holds nothing for long. The time is an argument and is never read here, so the
+        result is a function of the objects and `at`.
+        """
+        at = timestamp(at) if isinstance(at, str) else at
+        if at is None:
+            raise EvidenceError("a reference time must have the form YYYY-MM-DDTHH:MM:SS+00:00")
+        leases = self.objects("lease")
+        released = {r["lease"] for r in self.objects("release").values()
+                    if r["lease"] in leases and identity(r["by"]) == identity(leases[r["lease"]]["by"])}
+        worked: dict[tuple[str, str], datetime] = {}  # the last work of each identity on each target
+
+        def work(by: dict, targets, created) -> None:
+            if when := timestamp(created):
+                for t in targets:
+                    key = (identity(by), t)
+                    worked[key] = max(worked.get(key, when), when)
+
+        for r in self.objects("review").values():
+            work(r["by"], [r["claim"]], r["created"])
+        for c in self.objects("claim").values():
+            work(c["author"], c["depends_on"] + c.get("answers", []), c["created"])
+        out: dict[str, list[dict]] = {}
+        for h, lease in sorted(leases.items(), key=lambda kv: (kv[1]["created"], kv[0])):
+            start = timestamp(lease["created"])
+            done = worked.get((identity(lease["by"]), lease["target"]))
+            if h in released or (done is not None and done >= start):
+                continue
+            if at < min(timestamp(lease["until"]), start + LEASE_LIMIT):
+                out.setdefault(lease["target"], []).append({"id": h, **lease})
+        return out
+
     def upstream(self, h: str) -> list[str]:
         g = self.graph()
         return g.members(g.up[h])
@@ -501,13 +595,20 @@ class Store:
         scored = [(sum(math.log(1 + len(docs) / df[w]) for w in q & d), h) for h, d in docs.items()]
         return sorted((s for s in scored if s[0] > 0), reverse=True)[:limit]
 
-    def todo(self, me: dict | None = None) -> list[dict]:
+    def todo(self, me: dict | None = None, at: str | datetime | None = None) -> list[dict]:
         """Work that would most strengthen the record, highest impact first.
 
         The impact of work on a claim is the number of claims it would affect: the claim itself and
         everything built on it. The impact of answering a question is the number of questions it
         would help settle. Claims by `me` are not offered for reproduction, since that would not be
         independent; instead each of our runnable claims is offered once for a self-check.
+
+        Given a reference time `at`, each item lists under `leased` the leases that hold on it at
+        that time, and items leased by anyone but `me` come after all others, so that agents
+        sharing a record spread over the work instead of all taking the top item. Leased items are
+        demoted, not hidden, so that an agent with nothing else to do may still take one; our own
+        leases do not demote an item, so that we find our work where we left it. Without `at`,
+        leases are not consulted and the list depends on the objects and `me` alone.
         """
         claims = self.objects("claim")
         statuses = self.statuses()
@@ -552,8 +653,14 @@ class Store:
                     stack.extend(questions[p]["parents"])
             add("answer", h, q["text"], 1 + len(ancestors), "open question; claim an answer with --answers")
 
+        leases = self.leases(at) if at is not None else {}
+        for i in items:
+            i["leased"] = [{"id": lease["id"], "by": lease["by"], "until": lease["until"],
+                            "mine": mine is not None and identity(lease["by"]) == mine}
+                           for lease in leases.get(i["id"], [])]
         priority = {"recheck": 0, "selfcheck": 1, "reproduce": 2, "review": 3, "prove": 4, "answer": 5}
-        return sorted(items, key=lambda i: (-i["impact"], priority[i["action"]], i["id"]))
+        return sorted(items, key=lambda i: (any(not lease["mine"] for lease in i["leased"]), -i["impact"],
+                                            priority[i["action"]], i["id"]))
 
     # ---------------------------------------------------------------- sharing
 

@@ -1,7 +1,8 @@
 """Properties that must hold for any history, checked on random ones.
 
-Several labs claim, review and pull from each other at random. Whatever happens:
-  * every lab's statuses agree with a brute-force reading of its own objects;
+Several labs claim, review, lease and pull from each other at random. Whatever happens:
+  * every lab's statuses agree with a brute-force reading of its own objects, which ignores
+    leases, so leases never move a status;
   * once every lab has pulled from every other, all labs hold the same objects and agree on
     every status, whatever order the pulls happened in (merging is a union of sets).
 """
@@ -11,10 +12,11 @@ import random
 import tempfile
 import time
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from evidence import Store, signing
-from evidence.store import BROKEN, PRECEDENCE, identity
+from evidence.store import BROKEN, PRECEDENCE, identity, now
 
 SEEDS = range(int(os.environ.get("EV_SEEDS", "5")))
 
@@ -77,6 +79,13 @@ def simulate(seed: int, root: Path, labs: int = 3, steps: int = 150, signed: boo
             mine = [h for h, r in s.objects("review").items() if identity(r["by"]) == identity(s.author())]
             if mine:
                 s.withdraw(rng.choice(mine))
+        elif roll < 0.60:
+            # Leases are advice for `todo`; the oracle ignores them, so they must not move a status.
+            s.lease(rng.choice(claims + questions), timedelta(minutes=rng.randint(1, 600)))
+        elif roll < 0.63:
+            held = [t for t, ls in s.leases(now()).items() if any(l["by"] == s.author() for l in ls)]
+            if held:
+                s.release(rng.choice(held))
         elif roll < 0.75:
             verdict = rng.choice(["reproduced", "reproduced", "refuted", "superseded", "inconclusive"])
             target = rng.choice(claims)
@@ -109,6 +118,11 @@ class PropertyTest(unittest.TestCase):
                 views = [{h: (st.state, set(st.at_risk_because), st.independent)
                           for h, st in s.statuses().items()} for s in fresh]
                 self.assertTrue(all(v == views[0] for v in views))
+                # Judged at one time, leases steer every lab's todo alike.
+                at = now()
+                todos = [[(t["id"], t["action"], [l["id"] for l in t["leased"]]) for t in s.todo(at=at)]
+                         for s in fresh]
+                self.assertTrue(all(t == todos[0] for t in todos))
                 self.assertEqual(observed(fresh[0]), oracle(fresh[0]))
 
     @unittest.skipUnless(signing.available(), "needs ssh-keygen")

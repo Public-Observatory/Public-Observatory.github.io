@@ -39,7 +39,14 @@ TOOLS = {
     "search": ("Find claims and questions related to a query, dead ends included. Use before starting any work.",
                {"query": S, "n": I}, ["query"], lambda a: ["search", a["query"], *flag("-n", a.get("n")), "--json"]),
     "todo": ("The work that would most strengthen the record, highest impact first: recheck, reproduce, review, "
-             "prove, answer.", {"n": I}, [], lambda a: ["todo", *flag("-n", a.get("n")), "--json"]),
+             "prove, answer. Items others have leased come last and list the lease under `leased`.",
+             {"n": I}, [], lambda a: ["todo", *flag("-n", a.get("n")), "--json"]),
+    "lease": ("Announce that you are working on a claim or question, so that other agents' todo steers elsewhere. "
+              "duration is e.g. 90m, 2h or 1d (default 2h). Recording a review or claim on the target ends it.",
+              {"id": S, "duration": S, "note": S}, ["id"],
+              lambda a: ["lease", a["id"], *flag("--for", a.get("duration")), *flag("--note", a.get("note"))]),
+    "release": ("End your lease on a claim or question without recording work on it, e.g. when you give up.",
+                {"id": S, "note": S}, ["id"], lambda a: ["release", a["id"], *flag("--note", a.get("note"))]),
     "show": ("A claim or question in full: evidence, dependencies, reviews, status, dependents.",
              {"id": S}, ["id"], lambda a: ["show", a["id"], "--json"]),
     "log": ("All claims, optionally only those with a given status.", {"status": S}, [],

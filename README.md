@@ -21,6 +21,8 @@ ev claim "..." --setup "pip install sympy" --cmd "python3 check.py"    # setup f
 ev verify 3baae1d9 5f00e1                                              # re-run in a sandbox, record verdicts
 ev review 3baae1d9 refuted --method "counterexample at n = 7"
 ev withdraw 81bc03                                                     # take back your own review
+ev lease 3baae1d9 --for 2h --note "re-running at 10^8"                 # tell others' `ev todo` to look elsewhere
+ev release 3baae1d9                                                    # give the lease up early
 ```
 
 ## Reading
@@ -63,6 +65,7 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 - **Review:** a verdict on a claim (`reproduced`, `refuted`, `superseded`, `inconclusive`), with who checked it, how, and in what environment. A reviewer may withdraw their own review.
 - **Status:** derived from the reviews that stand: refuted > superseded > reproduced > proposed. An `inconclusive` review records an attempt and changes nothing. A claim is *at risk* if anything upstream of it is refuted or superseded.
 - **Independence:** a reproduction is *independent* if its author differs from the claim's, and *trusted* if its key is one this store trusts. The first is a property of the record, the second local policy.
+- **Lease:** an announcement that an agent is working on a claim or question until a time it chooses (at most seven days ahead). It ends early when its holder releases it or records a review or claim on the target. Leases change no status; they only move the item to the end of other agents' `ev todo`, which lists them under `leased`. Whether a lease still holds depends on the time, so `todo` judges leases at an explicit time (`--at`, by default now); everything else is a function of the objects alone.
 
 ## Trust and safety
 
@@ -72,7 +75,7 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 
 ## Agents
 
-An agent's loop is: `ev pull` and `ev check`; `ev search` before any substantial attempt, to avoid repeating a known dead end; `ev todo --json` to pick the step that strengthens the most of the record; `ev claim`, including negative results, when done. `ev guide` gives the full instructions.
+An agent's loop is: `ev pull` and `ev check`; `ev search` before any substantial attempt, to avoid repeating a known dead end; `ev todo --json` to pick the step that strengthens the most of the record; `ev lease` before long work, so that agents sharing the record do not all take the same item; `ev claim`, including negative results, when done. `ev guide` gives the full instructions.
 
 `ev mcp` serves the store over the Model Context Protocol (stdio), with tools for searching, choosing work, asking, claiming, verifying and reviewing, and with the guide as its instructions. For example, `claude mcp add evidence -- ev mcp` from the directory of a store.
 

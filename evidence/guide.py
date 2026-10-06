@@ -20,7 +20,12 @@ Work in this loop:
    recheck (foundations fell), selfcheck (your own claim never re-run from a clean directory),
    reproduce (no independent reproduction yet), review, prove (open conjecture), answer (open
    question). Prefer high impact. Break a large question into
-   smaller ones with `ev ask "<sub-question>" --parent <id>`.
+   smaller ones with `ev ask "<sub-question>" --parent <id>`. Items another agent has leased
+   come last, with the lease under "leased"; take one only if nothing else is worth doing.
+   Before any work longer than a few minutes, `ev lease <id> --for 2h` so that others do not
+   duplicate it; they see the lease once they pull it, so publish it as you publish your work.
+   Recording a review or a claim on the item ends the lease; if you give up, record why (a
+   negative claim) or `ev release <id>`.
 4. Do the work, then record it, whatever the outcome:
    - a result:     ev claim "<one precise sentence>" --file <script> --cmd "<command>" --dep <id> --answers <qid> --verify
    - a dead end:   ev claim "<what does not work, and how it failed>" --kind negative --note "<details>"

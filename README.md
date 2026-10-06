@@ -14,7 +14,8 @@ ev guide                             # instructions for an AI agent; also sent b
 ev ask "How dense are the primes below 10^6?"
 ev ask "How many primes are there below 1000?" --parent 4c1d          # break a question down
 ev claim "There are 168 primes below 1000." --file primes.py --cmd "python3 primes.py 1000 168" \
-         --answers 9e2a --verify                                       # re-run from a clean directory at once
+         --answers 9e2a --value 168 --verify                           # re-run from a clean directory at once
+ev claim "Here g is 9.81 m/s^2." --answers 7c1f --value "9.81 m/s^2 ± 0.02"   # a quantity with uncertainty
 ev claim "The average prime gap below 1000 is about 6." --dep 3baae1d9
 ev claim "Trial division is too slow beyond 10^7." --kind negative --note "timed out at 600s"
 ev claim "..." --setup "pip install sympy" --cmd "python3 check.py"    # setup failures are inconclusive
@@ -27,7 +28,7 @@ ev withdraw 81bc03                                                     # take ba
 
 ```sh
 ev search "sieve memory"     # has anyone tried this? dead ends and questions included
-ev todo                      # what to recheck, reproduce, review, prove or answer next, by impact
+ev todo                      # what to resolve, recheck, reproduce, review, prove or answer next, by impact
 ev check                     # claims resting on refuted or superseded work (exit 1 if any)
 ev questions                 # the tree of questions and how far each is settled
 ev show 3baae1d9             # a claim or question in full
@@ -58,8 +59,9 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 
 ## Model
 
-- **Question:** a text, optionally part of larger questions. A question is *answered* when a standing, reproduced claim answers it, *proposed* when a standing claim does, and *open* otherwise.
-- **Claim:** a statement, its kind (`result`, `negative`, `conjecture`), its author (agent, model, lab, key), its evidence (files, setup commands, a command that reproduces it, notes), the claims it depends on, and the questions it answers.
+- **Question:** a text, optionally part of larger questions. A question is *contested* when two of its answers that are neither refuted nor superseded carry values that disagree; otherwise it is *answered* when a standing, reproduced claim answers it, *proposed* when a standing claim does, and *open* otherwise. `ev todo` offers a contested question for resolution ahead of other work of equal impact.
+- **Claim:** a statement, its kind (`result`, `negative`, `conjecture`), its author (agent, model, lab, key), its evidence (files, setup commands, a command that reproduces it, notes), the claims it depends on, the questions it answers, and optionally its answer as a value.
+- **Value:** either exact, `{"exact": 168}` (an integer below 2^53 in magnitude, a boolean, or text of at most 200 characters), or a quantity, `{"quantity": "9.81", "uncertainty": "0.02", "unit": "m/s^2"}`, whose numbers are decimal strings, so that the digits written are the digits kept and comparison is exact; uncertainty and unit are optional. Two exact values agree when they are equal. Two quantities agree when their units are the same string and the intervals *quantity* ± *uncertainty* meet; an exact integer counts as a unitless quantity without uncertainty. Units are not converted: `9.81 m/s^2` and `981 cm/s^2` are not compared, and neither are a number and a text, so such values never make a question contested. A claim without a value has the same id as before values existed.
 - **Review:** a verdict on a claim (`reproduced`, `refuted`, `superseded`, `inconclusive`), with who checked it, how, and in what environment. A reviewer may withdraw their own review.
 - **Status:** derived from the reviews that stand: refuted > superseded > reproduced > proposed. An `inconclusive` review records an attempt and changes nothing. A claim is *at risk* if anything upstream of it is refuted or superseded.
 - **Independence:** a reproduction is *independent* if its author differs from the claim's, and *trusted* if its key is one this store trusts. The first is a property of the record, the second local policy.
@@ -116,6 +118,6 @@ The scripted baseline refutes every planted error and flags everything resting o
 
 - Unit tests of the store, questions and withdrawals, signatures, the sandbox, remotes, and the Palomar importer (the registry is replaced by a dictionary).
 - CLI tests that drive `ev` as an agent would and check its JSON output and exit codes; an MCP test that holds a JSON-RPC session with `ev mcp`.
-- Property tests: several labs ask, claim, review, withdraw and pull at random, signed or not. Statuses must agree with a brute-force oracle, and once all labs have exchanged everything they must hold the same objects and agree on every status, whatever the order of the pulls. `EV_SEEDS=50` runs more histories.
+- Property tests: several labs ask, claim (with values that sometimes disagree), review, withdraw and pull at random, signed or not. Statuses of claims and questions, contested ones included, must agree with a brute-force oracle, and once all labs have exchanged everything they must hold the same objects and agree on every status, whatever the order of the pulls. `EV_SEEDS=50` runs more histories.
 - A scale test: statuses, `todo` and `search` on 3000 claims in under five seconds (`EV_SCALE` to change the size).
 - The benchmark's constants are checked, and the scripted baseline must reach its expected score.

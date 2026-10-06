@@ -12,10 +12,10 @@ from . import report, sandbox, signing
 from .guide import GUIDE
 from .palomar import PALOMAR_ID, Palomar
 from .remote import open_source, serve
-from .store import KINDS, STATES, VERDICTS, EvidenceError, Store
+from .store import KINDS, STATES, VERDICTS, EvidenceError, Store, format_value
 
 MARK = {"proposed": "?", "reproduced": "✓", "refuted": "✗", "superseded": "→", "inconclusive": "~",
-        "at-risk": "!", "answered": "✓", "open": "○"}
+        "at-risk": "!", "answered": "✓", "open": "○", "contested": "≠"}
 
 
 def short(h: str) -> str:
@@ -35,6 +35,10 @@ def emit(args, data, text: str) -> None:
 
 def kind_tag(kind: str) -> str:
     return f"[{kind}] " if kind != "result" else ""
+
+
+def value_tag(claim: dict) -> str:
+    return f"  = {format_value(claim['value'])}" if "value" in claim else ""
 
 
 # ---------------------------------------------------------------- recording
@@ -64,7 +68,7 @@ def cmd_claim(args) -> None:
     # A Palomar id as a dependency imports that entry first.
     deps = [Palomar(store).import_entry(d) if PALOMAR_ID.fullmatch(d.upper()) else d for d in args.dep]
     h = store.claim(args.statement, kind=args.kind, files=args.file, cmd=args.cmd, notes=args.note,
-                    depends_on=deps, setup=args.setup, answers=args.answers)
+                    depends_on=deps, setup=args.setup, answers=args.answers, value=args.value)
     print(h)
     if args.verify:
         verify([h], args, store)
@@ -107,10 +111,11 @@ def cmd_log(args) -> None:
         state = statuses[h].label
         if args.status and state != args.status:
             continue
-        rows.append({"id": h, "status": state, "kind": c["kind"], "statement": c["statement"],
-                     "author": c["author"], "created": c["created"]})
+        row = {"id": h, "status": state, "kind": c["kind"], "statement": c["statement"],
+               "author": c["author"], "created": c["created"]}
+        rows.append({**row, "value": c["value"]} if "value" in c else row)
     lines = [f"{MARK[r['status']]} {short(r['id'])}  {r['status']:<10} {kind_tag(r['kind'])}{r['statement']}"
-             f"  — {who(r['author'], trust)}" for r in rows]
+             f"{value_tag(r)}  — {who(r['author'], trust)}" for r in rows]
     emit(args, rows, "\n".join(lines) or "no claims")
 
 
@@ -138,6 +143,8 @@ def cmd_show(args) -> None:
         out += [f"source   {src['registry']} {src['id']} v{src['version']}  {src['url']}",
                 f"         {', '.join(src['authors'])}; {src['repository']}@{src['commit'][:10]}"]
     out += ["", f"    {obj['statement']}", ""]
+    if "value" in obj:
+        out.append(f"{'value':<17} {format_value(obj['value'])}")
     for e in obj["evidence"]:
         detail = {"file": lambda: f"{e['name']} ({short(e['blob'])})",
                   "command": lambda: f"$ {e['cmd']}", "setup": lambda: f"$ {e['cmd']}",
@@ -164,28 +171,37 @@ def show_question(args, store, h, q) -> None:
     all_qs = store.question_statuses()
     qs = all_qs[h]
     claims, statuses, questions = store.objects("claim"), store.statuses(), store.objects("question")
-    data = {"id": h, **q, "status": qs.state, "answers": qs.answers, "subquestions": qs.subquestions}
+    data = {"id": h, **q, "status": qs.state, "answers": qs.answers, "subquestions": qs.subquestions,
+            "values": {a: claims[a]["value"] for a in qs.answers if "value" in claims[a]},
+            "conflicts": qs.conflicts}
     out = [f"question {h}", f"status   {qs.state}", f"author   {who(q['author'], store.trust())}", "",
            f"    {q['text']}", ""]
     out += [f"part of  {short(p)}  {questions[p]['text'] if p in questions else '(missing)'}" for p in q["parents"]]
     out += [f"sub      {MARK[all_qs[s].state]} {short(s)}  {questions[s]['text']}"
             for s in qs.subquestions]
-    out += [f"answer   {MARK[statuses[a].label]} {short(a)}  {claims[a]['statement']}" for a in qs.answers]
+    out += [f"answer   {MARK[statuses[a].label]} {short(a)}  {claims[a]['statement']}{value_tag(claims[a])}"
+            for a in qs.answers]
+    out += [f"conflict {short(a)} {format_value(claims[a]['value'])} against {short(b)} "
+            f"{format_value(claims[b]['value'])}" for a, b in qs.conflicts]
     emit(args, data, "\n".join(out))
 
 
 def cmd_questions(args) -> None:
     store = Store.find()
-    questions = store.objects("question")
+    questions, claims = store.objects("question"), store.objects("claim")
     qs = store.question_statuses()
     data = [{"id": h, "text": q["text"], "status": qs[h].state, "parents": q["parents"],
-             "answers": qs[h].answers, "subquestions": qs[h].subquestions}
-            for h, q in sorted(questions.items(), key=lambda kv: kv[1]["created"])]
+             "answers": qs[h].answers, "subquestions": qs[h].subquestions,
+             "values": {a: claims[a]["value"] for a in qs[h].answers if "value" in claims[a]},
+             "conflicts": qs[h].conflicts}
+            for h, q in sorted(questions.items(), key=lambda kv: (kv[1]["created"], kv[0]))]
     lines = []
 
     def tree(h, depth, seen):
+        values = sorted({format_value(claims[a]["value"]) for c in qs[h].conflicts for a in c})
         lines.append(f"{'  ' * depth}{MARK[qs[h].state]} {short(h)}  {questions[h]['text']}"
-                     + (f"  ({len(qs[h].answers)} answer(s))" if qs[h].answers else ""))
+                     + (f"  ({len(qs[h].answers)} answer(s))" if qs[h].answers else "")
+                     + (f"  contested: {' vs '.join(values)}" if values else ""))
         for s in qs[h].subquestions:
             if s not in seen:
                 tree(s, depth + 1, seen | {s})
@@ -225,7 +241,8 @@ def cmd_search(args) -> None:
         o = store.get(h)
         if o["type"] == "claim":
             data.append({"id": h, "type": "claim", "score": round(score, 3), "status": statuses[h].label,
-                         "kind": o["kind"], "statement": o["statement"]})
+                         "kind": o["kind"], "statement": o["statement"],
+                         **({"value": o["value"]} if "value" in o else {})})
         else:
             data.append({"id": h, "type": "question", "score": round(score, 3), "status": qs[h].state,
                          "kind": "question", "statement": o["text"]})
@@ -416,6 +433,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--note", action="append", default=[])
     s.add_argument("--dep", action="append", default=[], help="claim id or Palomar id this builds on (repeatable)")
     s.add_argument("--answers", action="append", default=[], help="question this claim answers (repeatable)")
+    s.add_argument("--value", help='the answer as a value: 168, true, "text", 9.81 m/s^2 ± 0.02')
     s.add_argument("--verify", action="store_true", help="re-run the command from a clean directory at once")
     s.add_argument("--timeout", type=int, default=600, help=argparse.SUPPRESS)
     s.add_argument("--sandbox", choices=sandbox.MODES, help=argparse.SUPPRESS)

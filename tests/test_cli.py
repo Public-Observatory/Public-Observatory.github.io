@@ -122,6 +122,38 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.ev("fsck", lab="lab-a"), "ok")
         self.assertIn("ev search", self.ev("guide"))
 
+    def test_disagreeing_values_contest_a_question(self):
+        q = self.ev("ask", "How many primes are there below 1000?", lab="lab-a")
+        right = self.ev("claim", "There are 168 primes below 1000.", "--file", str(DEMO),
+                        "--cmd", "python3 primes.py 1000 168", "--answers", q, "--value", "168", lab="lab-a")
+        self.ev("claim", "x", "--value", "9.81 ± x", lab="lab-a", ok=(2,))
+        self.ev("pull", str(self.dir / "lab-a"), lab="lab-b")
+        wrong = self.ev("claim", "There are 170 primes below 1000.", "--file", str(DEMO),
+                        "--cmd", "python3 primes.py 1000 170", "--answers", q, "--value", "170", lab="lab-b")
+        self.ev("pull", str(self.dir / "lab-b"), lab="lab-a")
+
+        self.assertEqual(self.js("show", wrong, lab="lab-a")["value"], {"exact": 170})
+        self.assertIn("= 170", self.ev("log", lab="lab-a"))
+        shown = self.js("show", q, lab="lab-a")
+        self.assertEqual(shown["status"], "contested")
+        self.assertEqual(shown["conflicts"], [sorted([right, wrong])])
+        self.assertEqual(shown["values"], {right: {"exact": 168}, wrong: {"exact": 170}})
+        tree = self.js("questions", lab="lab-a")
+        self.assertEqual([(t["status"], t["conflicts"]) for t in tree], [("contested", [sorted([right, wrong])])])
+        self.assertIn("contested: 168 vs 170", self.ev("questions", lab="lab-a"))
+        todo = self.js("todo", lab="lab-a")
+        self.assertEqual((todo[0]["action"], todo[0]["id"]), ("resolve", q))
+        md = self.ev("report", lab="lab-a")
+        self.assertIn("The question is contested: its standing answers disagree.", md)
+        self.assertIn("Standing answers disagree: ", md)
+        self.assertIn(f"168 (claim {right[:10]}, proposed)", md)
+        self.assertIn(f"170 (claim {wrong[:10]}, proposed)", md)
+        self.assertIn("orange", self.ev("graph", lab="lab-a"))
+
+        self.ev("verify", wrong, "--unsafe", lab="lab-a", ok=(1,))
+        self.assertEqual(self.js("show", q, lab="lab-a")["status"], "proposed")
+        self.assertNotIn("resolve", [t["action"] for t in self.js("todo", lab="lab-a")])
+
     def test_remotes(self):
         h = self.ev("claim", "from a", lab="lab-a")
         self.ev("remote", "add", "a", str(self.dir / "lab-a"), lab="lab-b")

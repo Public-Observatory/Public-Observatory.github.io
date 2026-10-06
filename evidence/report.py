@@ -1,7 +1,7 @@
 """The record written up for people: a digest, a report in Markdown or LaTeX, and a graph.
 
 Humans are meant to read only what matters. The report therefore leads with the questions and
-how far they are settled, then gives the principal results (reproduced claims that most other work
+how far they are settled, with contradictions between standing answers spelled out, then gives the principal results (reproduced claims that most other work
 rests on), what was refuted and how, the dead ends, the open conjectures, and the work at risk.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from .store import BROKEN, Store
+from .store import BROKEN, Store, format_value
 
 ITEMS = 10
 
@@ -35,13 +35,20 @@ def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
     labels = [s.label for s in statuses.values()]
     counts = {"claims": len(claims), "questions": len(questions),
               **{k: labels.count(k) for k in ("reproduced", "proposed", "refuted", "superseded", "at-risk")},
-              "answered": sum(q.state == "answered" for q in qs.values())}
+              "answered": sum(q.state == "answered" for q in qs.values()),
+              "contested": sum(q.state == "contested" for q in qs.values())}
+
+    def given(a: str) -> str:
+        return f"{format_value(claims[a]['value'])} (claim {a[:10]}, {statuses[a].label})"
 
     def q_line(h: str, depth: int) -> list[str]:
         q = qs[h]
         best = next((a for a in q.answers if statuses[a].label == "reproduced"), None) or next(
             (a for a in q.answers if statuses[a].label == "proposed"), None)
         answer = f" Answer: {claims[best]['statement']}" if best else ""
+        if q.conflicts:
+            answer = " Standing answers disagree: " + "; ".join(
+                f"{given(a)} against {given(b)}" for a, b in q.conflicts) + "."
         out = [("  " * depth) + f"{questions[h]['text']} ({q.state}).{answer}"]
         for s in q.subquestions:
             out += q_line(s, depth + 1)
@@ -84,11 +91,14 @@ def summary(counts: dict) -> str:
         text += " By status: " + (", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else parts[0]) + "."
     if c["at-risk"]:
         text += f" {plural(c['at-risk'], 'claim rests', 'claims rest')} on work that no longer stands."
-    if c["questions"]:
-        if c["questions"] == 1:
-            text += f" The question is {'answered' if c['answered'] else 'open'}."
-        else:
-            text += f" {c['answered']} of the {c['questions']} questions {'is' if c['answered'] == 1 else 'are'} answered."
+    if c["questions"] == 1:
+        state = "contested: its standing answers disagree" if c["contested"] else \
+            "answered" if c["answered"] else "open"
+        text += f" The question is {state}."
+    elif c["questions"]:
+        text += f" {c['answered']} of the {c['questions']} questions {'is' if c['answered'] == 1 else 'are'} answered."
+        if c["contested"]:
+            text += f" {plural(c['contested'], 'question has', 'questions have')} standing answers that disagree."
     return text
 
 
@@ -145,7 +155,8 @@ def dot(store: Store) -> str:
 
     out = ["digraph evidence {", "  rankdir=BT;", '  node [style=filled, fontname="Helvetica"];']
     for h, q in questions.items():
-        out.append(f'  "{h[:10]}" [shape=box, fillcolor="{"palegreen" if qs[h].state == "answered" else "lightblue"}", '
+        fill = {"answered": "palegreen", "contested": "orange"}.get(qs[h].state, "lightblue")
+        out.append(f'  "{h[:10]}" [shape=box, fillcolor="{fill}", '
                    f'label="? {label(q["text"])}"];')
         out += [f'  "{h[:10]}" -> "{p[:10]}" [style=dotted];' for p in q["parents"] if p in questions]
     for h, c in claims.items():

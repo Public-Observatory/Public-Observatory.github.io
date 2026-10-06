@@ -44,6 +44,12 @@ def kind_tag(kind: str) -> str:
     return f"[{kind}] " if kind != "result" else ""
 
 
+def markers(status) -> str:
+    """What the state alone does not say: the author's own re-run, and objections without evidence."""
+    return (" [self-checked]" if status.self_checked and status.state == "proposed" else "") + \
+        (f" [disputed by {len(status.disputed)}]" if status.disputed else "")
+
+
 def value_tag(claim: dict) -> str:
     return f"  = {format_value(claim['value'])}" if "value" in claim else ""
 
@@ -75,15 +81,31 @@ def cmd_claim(args) -> None:
     # A Palomar id as a dependency imports that entry first.
     deps = [Palomar(store).import_entry(d) if PALOMAR_ID.fullmatch(d.upper()) else d for d in args.dep]
     h = store.claim(args.statement, kind=args.kind, files=args.file, cmd=args.cmd, notes=args.note,
-                    depends_on=deps, setup=args.setup, answers=args.answers, value=args.value)
+                    depends_on=deps, setup=args.setup, answers=args.answers, value=args.value,
+                    refutes=args.refutes)
     print(h)
     if args.verify:
         verify([h], args, store)
 
 
 def cmd_review(args) -> None:
+    """A refutation may bring its evidence: a counter-claim on record (--counter), or files and a
+    command, which are recorded as a new counter-claim so that others can re-run and review it."""
     store = Store.find()
-    print(store.review(args.id, args.verdict, args.method, note=args.note, superseded_by=args.by))
+    counter = args.counter
+    if args.cmd or args.file or args.setup:
+        if counter or args.verdict != "refuted" or not args.cmd:
+            raise EvidenceError("evidence for a review needs `refuted`, a --cmd, and no --counter")
+        target = store.resolve(args.id, "claim")
+        counter = store.claim(f"Claim {short(target)} does not hold: {args.method}", files=args.file,
+                              cmd=args.cmd, setup=args.setup)
+        print(counter)
+    h = store.review(args.id, args.verdict, args.method, note=args.note, superseded_by=args.by, counter=counter)
+    print(h)
+    if h in store.statuses()[store.resolve(args.id)].disputed:
+        print("recorded as an objection: the claim is now disputed, but its status is unchanged, since only "
+              "evidence refutes another author's claim (--counter, --file with --cmd, or `ev verify`)",
+              file=sys.stderr)
 
 
 def cmd_apply(args) -> None:
@@ -202,10 +224,11 @@ def cmd_log(args) -> None:
         if args.status and state != args.status:
             continue
         row = {"id": h, "status": state, "kind": c["kind"], "statement": c["statement"],
-               "author": c["author"], "created": c["created"]}
+               "author": c["author"], "created": c["created"], "self_checked": statuses[h].self_checked,
+               "disputed": statuses[h].disputed}
         rows.append({**row, "value": c["value"]} if "value" in c else row)
     lines = [f"{MARK[r['status']]} {short(r['id'])}  {r['status']:<10} {kind_tag(r['kind'])}{r['statement']}"
-             f"{value_tag(r)}  — {who(r['author'], trust)}" for r in rows]
+             f"{value_tag(r)}{markers(statuses[r['id']])}  — {who(r['author'], trust)}" for r in rows]
     emit(args, rows, "\n".join(lines) or "no claims")
 
 
@@ -223,10 +246,11 @@ def cmd_show(args) -> None:
     status = store.statuses()[h]
     down = store.downstream(h)
     data = {"id": h, **obj, "status": status.label, "independent": status.independent,
-            "trusted": status.trusted, "reviews": status.reviews,
+            "trusted": status.trusted, "self_checked": status.self_checked, "disputed": status.disputed,
+            "grounds": status.grounds, "reviews": status.reviews,
             "at_risk_because": status.at_risk_because, "dependents": down}
     state = status.label + (f" ({status.independent} independent, {status.trusted} trusted)"
-                            if status.independent else "")
+                            if status.independent else "") + markers(status)
     out = [f"claim {h}", f"status   {state}", f"kind     {obj['kind']}",
            f"author   {who(obj['author'], trust)}", f"created  {obj['created']}"]
     if src := obj.get("source"):
@@ -249,8 +273,12 @@ def cmd_show(args) -> None:
     for d in obj["depends_on"]:
         out.append(f"depends  {short(d)}  {claims[d]['statement'] if d in claims else '(missing)'}")
     for r in status.reviews:
-        out.append(f"review   {MARK[r['verdict']]} {r['verdict']} by {who(r['by'], trust)}: {r['method']}"
-                   + (f" — {r['note'].splitlines()[-1]}" if r["note"] else "") + f"  [{short(r['id'])}]")
+        role = (" (holds)" if r["id"] in status.grounds and r["verdict"] in ("refuted", "superseded") else
+                " (objection without evidence)" if r["id"] in status.disputed else "")
+        out.append(f"review   {MARK[r['verdict']]} {r['verdict']}{role} by {who(r['by'], trust)}: {r['method']}"
+                   + (f" — {r['note'].splitlines()[-1]}" if r["note"].strip() else "")
+                   + (f" (counter-claim {short(r['counter'])})" if r.get("counter") else "")
+                   + f"  [{short(r['id'])}]")
     for d in status.at_risk_because:
         out.append(f"at risk  upstream {short(d)} is no longer standing")
     if down:
@@ -262,7 +290,8 @@ def show_question(args, store, h, q) -> None:
     all_qs = store.question_statuses()
     qs = all_qs[h]
     claims, statuses, questions = store.objects("claim"), store.statuses(), store.objects("question")
-    data = {"id": h, **q, "status": qs.state, "answers": qs.answers, "subquestions": qs.subquestions,
+    data = {"id": h, **q, "status": qs.state, "answers": qs.answers, "standing": qs.standing,
+            "subquestions": qs.subquestions,
             "values": {a: claims[a]["value"] for a in qs.answers if "value" in claims[a]},
             "conflicts": qs.conflicts}
     out = [f"question {h}", f"status   {qs.state}", f"author   {who(q['author'], store.trust())}", "",
@@ -282,7 +311,7 @@ def cmd_questions(args) -> None:
     questions, claims = store.objects("question"), store.objects("claim")
     qs = store.question_statuses()
     data = [{"id": h, "text": q["text"], "status": qs[h].state, "parents": q["parents"],
-             "answers": qs[h].answers, "subquestions": qs[h].subquestions,
+             "answers": qs[h].answers, "standing": qs[h].standing, "subquestions": qs[h].subquestions,
              "values": {a: claims[a]["value"] for a in qs[h].answers if "value" in claims[a]},
              "conflicts": qs[h].conflicts}
             for h, q in sorted(questions.items(), key=lambda kv: (kv[1]["created"], kv[0]))]
@@ -291,7 +320,7 @@ def cmd_questions(args) -> None:
     def line(h: str, depth: int) -> str:
         values = sorted({format_value(claims[a]["value"]) for c in qs[h].conflicts for a in c})
         return (f"{'  ' * depth}{MARK[qs[h].state]} {short(h)}  {questions[h]['text']}"
-                + (f"  ({len(qs[h].answers)} answer(s))" if qs[h].answers else "")
+                + (f"  ({len(qs[h].standing)} standing answer(s))" if qs[h].standing else "")
                 + (f"  contested: {' vs '.join(values)}" if values else ""))
 
     lines = [line(h, depth) for h, depth in report.tree(roots, lambda h: qs[h].subquestions)]
@@ -533,18 +562,27 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--dep", action="append", default=[], help="claim id or Palomar id this builds on (repeatable)")
     s.add_argument("--answers", action="append", default=[], help="question this claim answers (repeatable)")
     s.add_argument("--value", help='the answer as a value: 168, true, "text", 9.81 m/s^2 ± 0.02')
+    s.add_argument("--refutes", action="append", default=[],
+                   help="claim this one shows false; it stands refuted while this claim stands (needs --cmd)")
     s.add_argument("--verify", action="store_true", help="re-run the command from a clean directory at once")
     s.add_argument("--timeout", type=int, default=600, help=argparse.SUPPRESS)
     s.add_argument("--sandbox", choices=sandbox.MODES, help=argparse.SUPPRESS)
     s.add_argument("--unsafe", action="store_true", help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_claim)
 
-    s = sub.add_parser("review", help="record a verdict on a claim")
+    s = sub.add_parser("review", help="record a verdict on a claim; another author's claim is refuted "
+                       "only with evidence, otherwise it is disputed")
     s.add_argument("id")
     s.add_argument("verdict", choices=VERDICTS)
     s.add_argument("--method", required=True, help="how it was checked")
     s.add_argument("--note", default="")
     s.add_argument("--by", help="the superseding claim")
+    s.add_argument("--counter", help="a claim with a command that shows this one false; the refutation "
+                   "holds while it stands")
+    s.add_argument("--file", action="append", default=[], type=Path,
+                   help="evidence for a refutation, recorded as a counter-claim (repeatable; needs --cmd)")
+    s.add_argument("--cmd", help="command that exits 0 exactly when the refutation holds")
+    s.add_argument("--setup", action="append", default=[], help="command preparing the environment (repeatable)")
     s.set_defaults(func=cmd_review)
 
     s = sub.add_parser("apply", parents=[js], help="record a batch of questions, claims and reviews "

@@ -16,7 +16,7 @@ uv run --no-project --python 3.10 python -m unittest discover -s tests       # t
 
 ## Layout
 
-- `evidence/store.py`: the data model. Object schema and validation, the dependency `Graph` (ancestors and descendants as integer bitsets), recording (`ask`, `claim`, `review`, `withdraw`, `lease`, `release`, signing in `_record`), `verify`, statuses of claims and questions, `leases`, `search`, `todo`, `pull`, signature checks, `fsck`.
+- `evidence/store.py`: the data model. Object schema and validation, the dependency `Graph` (ancestors and descendants as integer bitsets), recording (`ask`, `claim`, `review`, `withdraw`, `lease`, `release`, signing in `_record`), `verify`, statuses of claims (reviewers' positions, counter-claims as a least fixed point, disputes) and questions, `leases`, `search`, `todo`, `pull`, signature checks, `fsck`.
 - `evidence/signing.py`: SSH signatures through `ssh-keygen -Y`.
 - `evidence/sandbox.py`: how `verify` isolates commands (seatbelt, bwrap, docker, none).
 - `evidence/remote.py`: sources for `pull` (store on disk, HTTP, git) and the read-only HTTP server.
@@ -36,7 +36,7 @@ Do not break these; the tests guard most of them.
 - A claim's state is a pure function of the set of objects. Hence `pull` (set union) is commutative, associative and idempotent, and labs that have exchanged everything agree. Only the *trusted* count depends on local configuration. Nothing may depend on file order, the clock at read time, or other local state.
 - The one, narrow exception to the clock: leases. Whether a lease holds depends on the time, so `Store.leases` and `Store.todo` take the reference time as an argument and never read the clock; only `cli.py` supplies "now" (`ev todo --at` overrides it). Leases affect nothing but the order of `todo` and its `leased` field: never a status, `check`, a question's state, a report, or the property-test oracle.
 - Validate at the boundary: `pull` refuses, before writing anything, any object with a bad hash, a malformed structure (`invalid`), or a key without a valid signature. A bad object can never be removed, so it must never get in. Unknown object types are accepted and ignored, for forward compatibility.
-- Only evidence can refute. A failure of the environment (setup step, timeout, missing program, sandbox denial) is `inconclusive` and never changes a status.
+- Only evidence can refute. A failure of the environment (setup step, timeout, missing program, sandbox denial) is `inconclusive` and never changes a status. A refutation or supersession by anyone but the claim's author without evidence (a failed run of the claim's command, or a standing counter-claim with a command) does not change a status either: it marks the claim disputed. A reproduction by the claim's own author is a self-check, not a reproduction, and each reviewer's latest decisive review of a claim is their only position on it.
 - `verify` never runs another lab's command unsandboxed unless explicitly told `--unsafe`. Tests that verify across labs pass `unsafe=True` so they behave the same on machines without a sandbox.
 - Imports are deterministic: two labs importing the same external entry produce the same id.
 - No runtime dependencies. Standard library only, Python 3.10+. External programs (`ssh-keygen`, `sandbox-exec`, `bwrap`, `docker`, `git`) are optional and their tests skip when absent.

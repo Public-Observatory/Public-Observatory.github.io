@@ -12,6 +12,12 @@ refuted or superseded. Nothing is ever edited or deleted; you add to the record.
 answers a question may carry its answer as a value; a question is contested when two of its
 standing answers carry values that disagree.
 
+Only evidence refutes another author's claim: a failed run of its own command (`ev verify`), or a
+counter-claim with a command of its own, which refutes it for as long as the counter-claim stands.
+A refutation in prose alone only marks the claim disputed. Re-running your own claim is a
+self-check: it catches missing files, but the claim stays proposed, and its question unanswered,
+until someone else reproduces it. Your latest review of a claim replaces your earlier ones.
+
 Work in this loop:
 
 1. Orient. `ev pull` to fetch the others' work, then `ev check` to see whether anything you
@@ -21,8 +27,9 @@ Work in this loop:
    covers your plan, do not repeat it unless you have a reason the earlier attempt did not; if a
    claim already settles it, depend on that claim instead.
 3. Choose. `ev todo --json` lists the work that would strengthen the most of the record:
-   resolve (standing answers to a question disagree: re-run both, refute the wrong one, and say
-   why), recheck (foundations fell), selfcheck (your own claim never re-run from a clean directory),
+   resolve (standing answers to a question disagree: re-run both, refute the wrong one with
+   evidence), recheck (foundations fell), adjudicate (someone objected without evidence: re-run
+   the claim and weigh the objection), selfcheck (your own claim never re-run from a clean directory),
    reproduce (no independent reproduction yet), review, prove (open conjecture), answer (open
    question). Prefer high impact. Break a large question into
    smaller ones with `ev ask "<sub-question>" --parent <id>`. Items another agent has leased
@@ -38,6 +45,9 @@ Work in this loop:
    - a dead end:   ev claim "<what does not work, and how it failed>" --kind negative --note "<details>"
    - a hunch:      ev claim "<statement>" --kind conjecture
    - a check:      ev verify <id>     (re-runs the command in a sandbox and records the verdict)
+   - a refutation: ev claim "<what is true instead>" --file <script> --cmd "<command>" --refutes <id>
+                   or ev review <id> refuted --method "<how>" --file <script> --cmd "<command>"
+                   or ev review <id> refuted --method "<how>" --counter <claim already on record>
    - a judgement:  ev review <id> reproduced|refuted|superseded|inconclusive --method "<how>"
    - a whole run:  ev apply run.jsonl   (or - for standard input; see below)
    Make the command exit 0 exactly when the claim holds, so that anyone can re-run it. Put
@@ -48,20 +58,31 @@ Work in this loop:
    quoted text ("Riemann"), or a quantity with its uncertainty and unit (9.81 ± 0.02 m/s^2).
    Quantities agree when their intervals overlap and their units are written identically; units
    are not converted, so use the unit the question or earlier answers use.
+   A refutation's command must exit 0 exactly when the refutation holds, e.g. when it finds the
+   counterexample. Do not list the claim you refute under --dep: a counter-claim that rests on its
+   target cannot stand once the target falls, and the dispute stays undecided.
+   A review with neither a run nor a counter-claim is an objection: it disputes the claim and
+   changes nothing else. When a claim you rely on is disputed, do not treat it as fallen and do
+   not argue in prose: re-run it. If it fails, `ev verify` records the refutation; if it holds,
+   record your reproduction. If you believe a counter-claim is wrong, re-run it the same way;
+   when it falls, the refutation it carried lapses.
    Make every claim checkable on any machine, for it will be re-run on machines other than
    yours. Compare timings relatively ("the sieve is at least 10 times faster than trial
    division at 10^7") rather than absolutely ("takes 2 s"); when the hardware matters, state it
    in the claim itself. Give negative claims a command too where you can, one that exits 0
    exactly when the failure recurs, so that a dead end can be checked rather than believed.
-5. Correct yourself. If you reviewed wrongly, `ev withdraw <review-id>`. If you were wrong, refute
-   your own claim; if you found something better, review the old claim as superseded --by the new.
+5. Correct yourself. If you reviewed wrongly, `ev withdraw <review-id>` or review again: only your
+   latest review counts. If you were wrong, refute your own claim (an author's retraction needs no
+   further evidence); if you found something better, review your old claim as superseded --by the new.
 
 To record many things at once, write one JSON object per line and run `ev apply FILE` (the MCP
 tool `apply` takes the lines as an array). Each line names exactly one of ask, claim or review:
   {"ask": "<question>", "ref": "q1", "parents": ["<ref or id>"]}
   {"claim": "<statement>", "ref": "c1", "kind": "negative", "answers": ["q1"], "depends_on": ["<ref or id>"],
-   "files": ["<path>"], "cmd": "<command>", "setup": ["<command>"], "notes": ["<text>"], "value": 168}
-  {"review": "c1", "verdict": "reproduced", "method": "<how>", "note": "<text>", "superseded_by": "<ref or id>"}
+   "refutes": ["<ref or id>"], "files": ["<path>"], "cmd": "<command>", "setup": ["<command>"],
+   "notes": ["<text>"], "value": 168}
+  {"review": "c1", "verdict": "reproduced", "method": "<how>", "note": "<text>", "superseded_by": "<ref or id>",
+   "counter": "<ref or id>"}
 Any line may give "ref" and "created" (ISO 8601 with a zone); only the type field, and a
 review's verdict and method, are required. A reference is the ref of an earlier line or an id
 of at least six hex digits on record. If any line is wrong, nothing is recorded and the error

@@ -18,6 +18,14 @@ that other agents' `todo` steers elsewhere; the announcement expires, so whether
 depends on the time. Leases therefore never enter a status, `check`, a report or a question's
 state. They affect only the order of `todo`, and only when the caller passes the reference time
 explicitly, so that every function here remains a function of its arguments and the objects.
+
+Only evidence can refute. A review that would topple a claim (refuted or superseded) holds only
+when it is backed: by the claim's own author (a retraction, or a replacement of one's own work), by
+a failed run of the claim's own command (`verify`), or by a counter-claim that carries a command of
+its own and stands. Anything else is an objection: it marks the claim disputed and changes nothing
+else, so that one key cannot topple a reproduced claim, and everything built on it, by saying so.
+A reproduction counts only when someone other than the author made it; the author's own run is a
+self-check. Each reviewer holds one position on a claim, their latest decisive review.
 """
 
 from __future__ import annotations
@@ -95,7 +103,8 @@ SCHEMA = {
     "lease": {"target": str, "by": dict, "until": str, "note": str, "created": str},
     "release": {"lease": str, "by": dict, "note": str, "created": str},
 }
-REFERENCES = {"question": ("parents",), "claim": ("depends_on", "answers"), "review": ("claim", "superseded_by"),
+REFERENCES = {"question": ("parents",), "claim": ("depends_on", "answers"),
+              "review": ("claim", "superseded_by", "counter"),
               "withdrawal": ("review",), "signature": ("object",), "lease": ("target",), "release": ("lease",)}
 
 
@@ -328,6 +337,24 @@ def keys_named(obj: dict) -> set[str]:
     return {a["key"] for a in (obj.get("author"), obj.get("by")) if isinstance(a, dict) and a.get("key")}
 
 
+def _later(created: str) -> str:
+    """A time one second after `created`, in the form `now` writes; text in any other form is
+    ignored, so that an odd timestamp cannot carry our later reviews with it."""
+    t = timestamp(created)
+    return (t + timedelta(seconds=1)).isoformat() if t else ""
+
+
+def runnable(claim: dict) -> bool:
+    return any(e.get("kind") == "command" for e in claim["evidence"])
+
+
+def ran(review: dict) -> bool:
+    """Whether a refutation reports a failed run of the claim's own command, as `verify` writes
+    it: with the digest of the output. Anyone can repeat such a run, so it is evidence."""
+    env = review.get("environment")
+    return review["verdict"] == "refuted" and isinstance(env, dict) and isinstance(env.get("output_sha256"), str)
+
+
 def words(text: str) -> set[str]:
     return set(re.findall(r"\w+", text.lower()))
 
@@ -341,6 +368,13 @@ class Status:
     # keys this store trusts.
     independent: int = 0
     trusted: int = 0
+    # The author re-ran the claim; this catches missing files but reproduces nothing.
+    self_checked: bool = False
+    # Standing reviews that object to the claim without evidence that holds; they change no status.
+    disputed: list[str] = field(default_factory=list)
+    # The standing reviews that decide the state: those that topple it, else the independent
+    # reproductions.
+    grounds: list[str] = field(default_factory=list)
 
     @property
     def label(self) -> str:
@@ -354,6 +388,8 @@ class QuestionStatus:
     subquestions: list[str] = field(default_factory=list)
     # Pairs of standing answers whose values disagree; the question is contested while any remain.
     conflicts: list[list[str]] = field(default_factory=list)
+    # The answers that are neither refuted, superseded nor at risk.
+    standing: list[str] = field(default_factory=list)
 
 
 class Graph:
@@ -603,10 +639,17 @@ class Store:
     def claim(self, statement: str, kind: str = "result", files: list[Path] = (),
               cmd: str | None = None, notes: list[str] = (), depends_on: list[str] = (),
               setup: list[str] = (), answers: list[str] = (), value: dict | str | None = None,
-              created: str | None = None, reuse: bool = False) -> str:
+              refutes: list[str] = (), created: str | None = None, reuse: bool = False) -> str:
+        """Record a claim. With `refutes`, it is also recorded as a counter-claim against each of
+        those claims: they stand refuted exactly while this claim stands."""
         if kind not in KINDS:
             raise EvidenceError(f"kind must be one of {KINDS}")
+        targets = sorted({self.resolve(r, "claim") for r in refutes})
+        if targets and not cmd:
+            raise EvidenceError("a counter-claim needs a command (--cmd) that exits 0 exactly when it holds")
         deps = sorted({self.resolve(d, "claim") for d in depends_on})
+        if set(targets) & set(deps):
+            raise EvidenceError("a counter-claim cannot depend on the claim it refutes")
         evidence = [{"kind": "file", "name": Path(f).name, "blob": self.put_blob(Path(f).read_bytes())}
                     for f in files]
         # Setup commands prepare the environment; their failure says nothing about the claim.
@@ -623,11 +666,18 @@ class Store:
             if why := value_invalid(value):
                 raise EvidenceError(f"malformed value: {why}")
             obj["value"] = value
-        return self._record(obj, reuse)
+        h = self._record(obj, reuse)
+        for t in targets:
+            self.review(t, "refuted", f"counter-claim {h[:10]}: {statement}", counter=h,
+                        created=created, reuse=reuse)
+        return h
 
     def review(self, claim: str, verdict: str, method: str, note: str = "",
                superseded_by: str | None = None, environment: dict | None = None,
-               created: str | None = None, reuse: bool = False) -> str:
+               counter: str | None = None, created: str | None = None, reuse: bool = False) -> str:
+        """Record a verdict. A refutation by anyone but the claim's author changes its status only
+        with evidence: a `counter` claim that carries a command, or a failed run (`verify`).
+        Without it, the review is recorded as an objection and the claim becomes disputed."""
         if verdict not in VERDICTS:
             raise EvidenceError(f"verdict must be one of {VERDICTS}")
         claim = self.resolve(claim, "claim")
@@ -635,8 +685,20 @@ class Store:
             if not superseded_by:
                 raise EvidenceError("superseded needs --by CLAIM")
             superseded_by = self.resolve(superseded_by, "claim")
-        obj = {"type": "review", "claim": claim, "verdict": verdict, "by": self.author(),
-               "method": method, "note": note, "superseded_by": superseded_by, "created": stamp(created)}
+        me = self.author()
+        # Our latest review of a claim is our position on it, so a new one must come after the old
+        # ones even within the same second of the clock. A time the caller fixes is kept as given.
+        created = stamp(created) if created is not None else max(
+            [now()] + [_later(r["created"]) for r in self.objects("review").values()
+                       if r["claim"] == claim and identity(r["by"]) == identity(me)])
+        obj = {"type": "review", "claim": claim, "verdict": verdict, "by": me,
+               "method": method, "note": note, "superseded_by": superseded_by, "created": created}
+        if counter:
+            counter = self.resolve(counter, "claim")
+            if verdict != "refuted" or counter == claim or not runnable(self.get(counter)):
+                raise EvidenceError("a counter-claim backs only a refutation of another claim, "
+                                    "and must carry a command")
+            obj["counter"] = counter
         if environment:
             obj["environment"] = environment
         return self._record(obj, reuse)
@@ -742,17 +804,27 @@ class Store:
                 if w["review"] in reviews and identity(reviews[w["review"]]["by"]) == identity(w["by"])}
 
     def statuses(self) -> dict[str, Status]:
+        """The state of every claim, from the reviews that stand.
+
+        Each reviewer's latest decisive review of a claim (by `created`, then id; withdrawn and
+        inconclusive reviews aside) is their position, so nobody counts as both a reproducer and
+        a refuter. A toppling review holds when it is backed (see the module docstring). A
+        refutation backed by a counter-claim holds while the counter-claim stands: neither it nor
+        anything it rests on is refuted or superseded. Counter-claims may refute each other in a
+        cycle, so standing is computed as the least fixed point (the grounded semantics of
+        argumentation): a refutation holds once its counter-claim is known to stand, lapses once
+        it is known to have fallen, and a claim whose fate still turns on an undecided cycle is
+        left standing and disputed. Thus the result is unique and a function of the objects alone.
+        """
         claims = self.objects("claim")
         withdrawn = self.withdrawn()
         by_claim: dict[str, list[dict]] = {h: [] for h in claims}
+        position: dict[tuple[str, str], dict] = {}
         for h, r in sorted(self.objects("review").items(), key=lambda kv: (kv[1]["created"], kv[0])):
             if h not in withdrawn:
                 by_claim.setdefault(r["claim"], []).append({"id": h, **r})
-
-        own = {}
-        for h, rs in by_claim.items():
-            verdicts = {r["verdict"] for r in rs} | {"proposed"}
-            own[h] = next(v for v in PRECEDENCE if v in verdicts)
+                if r["verdict"] != "inconclusive":
+                    position[(r["claim"], identity(r["by"]))] = by_claim[r["claim"]][-1]
 
         trust = self.trust()
 
@@ -761,19 +833,71 @@ class Store:
             key = author.get("key", "")
             return f"trusted:{trust[key]}" if key in trust else identity(author)
 
+        reproduced = {h: [] for h in claims}
+        holds = {h: [] for h in claims}     # toppling reviews that hold outright
+        counters = {h: [] for h in claims}  # refutations that hold while their counter-claim stands
+        objections = {h: [] for h in claims}
+        for (h, who), r in sorted(position.items(), key=lambda kv: (kv[1]["created"], kv[1]["id"])):
+            if h not in claims:
+                continue
+            c = r.get("counter")
+            if r["verdict"] == "reproduced":
+                reproduced[h].append(r)
+            elif who == identity(claims[h]["author"]) or ran(r):
+                holds[h].append(r)
+            elif r["verdict"] == "refuted" and c in claims and c != h and runnable(claims[c]):
+                counters[h].append(r)
+            else:
+                objections[h].append(r)
+
         g = self.graph()
-        broken = g.mask(h for h in claims if own[h] in BROKEN)
+        fallen = g.mask(h for h in claims if holds[h])
+        standing = g.mask(h for h in claims if not holds[h] and not counters[h])
+        pending = {h for h in claims if not holds[h] and counters[h]}
+
+        def stands(c: str) -> bool | None:
+            m = g.bit[c] | g.up[c]
+            return False if m & fallen else True if m & standing == m else None
+
+        changed = True
+        while changed:
+            changed = False
+            for h in sorted(pending):
+                verdicts = [stands(r["counter"]) for r in counters[h]]
+                if True in verdicts:
+                    fallen |= g.bit[h]
+                elif all(v is False for v in verdicts):
+                    standing |= g.bit[h]
+                else:
+                    continue
+                pending.discard(h)
+                changed = True
+
         out = {}
         for h, c in claims.items():
-            by = {name(r["by"]) for r in by_claim[h] if r["verdict"] == "reproduced"} - {name(c["author"])}
-            out[h] = Status(own[h], by_claim[h], g.members(g.up[h] & broken), len(by),
-                            sum(n.startswith("trusted:") for n in by))
+            author = name(c["author"])
+            if g.bit[h] & fallen:
+                grounds = holds[h] + [r for r in counters[h] if stands(r["counter"])]
+                state = "refuted" if any(r["verdict"] == "refuted" for r in grounds) else "superseded"
+                disputed = []
+            else:
+                grounds = [r for r in reproduced[h] if identity(r["by"]) != identity(c["author"])
+                           and name(r["by"]) != author]
+                state = "reproduced" if grounds else "proposed"
+                disputed = objections[h] + [r for r in counters[h] if stands(r["counter"]) is None]
+            by = {name(r["by"]) for r in grounds if r["verdict"] == "reproduced"}
+            out[h] = Status(state, by_claim[h], g.members(g.up[h] & fallen), len(by),
+                            sum(n.startswith("trusted:") for n in by),
+                            any(identity(r["by"]) == identity(c["author"]) for r in reproduced[h]),
+                            [r["id"] for r in sorted(disputed, key=lambda r: (r["created"], r["id"]))],
+                            [r["id"] for r in grounds])
         return out
 
     def question_statuses(self, statuses: dict[str, Status] | None = None) -> dict[str, QuestionStatus]:
         """A question is contested when two of its answers that are neither refuted nor superseded
-        carry values that disagree. Otherwise it is answered when a standing reproduced claim
-        answers it, proposed when a standing claim does, and open otherwise."""
+        carry values that disagree. Otherwise it is answered when a standing claim reproduced by
+        someone other than its author answers it, proposed when a standing claim does, and open
+        otherwise. A disputed answer still stands: an objection without evidence settles nothing."""
         statuses = statuses if statuses is not None else self.statuses()
         questions = self.objects("question")
         claims = self.objects("claim")
@@ -787,6 +911,7 @@ class Store:
                 if q in out:
                     out[q].answers.append(h)
         for qs in out.values():
+            qs.standing = [a for a in qs.answers if statuses[a].label in ("reproduced", "proposed")]
             labels = {statuses[a].label for a in qs.answers}
             qs.state = "answered" if "reproduced" in labels else "proposed" if "proposed" in labels else "open"
             valued = [a for a in qs.answers if "value" in claims[a] and statuses[a].state not in BROKEN]
@@ -869,7 +994,10 @@ class Store:
         everything built on it. The impact of answering a question is the number of questions it
         would help settle. Resolving a contested question counts both: the questions it settles and
         the claims in dispute with everything built on them; at equal impact it comes first, since
-        a contradiction on the record misleads everyone who reads it. Claims by `me` are not offered
+        a contradiction on the record misleads everyone who reads it. A disputed claim is offered
+        for adjudication to those who hold no position on it yet: an objection without evidence
+        changes nothing, but it may be right, and only a re-run or a counter-claim can show it.
+        Claims by `me` are not offered
         for reproduction, since that would not be independent; instead each of our runnable claims
         is offered once for a self-check.
 
@@ -899,6 +1027,13 @@ class Store:
                     f"rests on {len(s.at_risk_because)} claim(s) no longer standing")
             elif s.state in BROKEN:
                 continue
+            elif s.disputed and not any(identity(r["by"]) == mine and r["verdict"] != "inconclusive"
+                                        and not (own and r["verdict"] == "reproduced") for r in s.reviews):
+                reviews = {r["id"]: r for r in s.reviews}
+                add("adjudicate", h, c["statement"], impact,
+                    "objected to without evidence that holds: " + "; ".join(
+                        reviews[r]["method"] for r in s.disputed) + "; re-run it and weigh the objection: "
+                    "refute with evidence if it is right (`ev verify`, `ev claim --refutes`), reproduce if not")
             elif own:
                 if runnable and not s.reviews:
                     add("selfcheck", h, c["statement"], impact,
@@ -945,7 +1080,8 @@ class Store:
             i["leased"] = [{"id": lease["id"], "by": lease["by"], "until": lease["until"], "note": lease["note"],
                             "mine": mine is not None and identity(lease["by"]) == mine}
                            for lease in leases.get(i["id"], [])]
-        priority = {"resolve": 0, "recheck": 1, "selfcheck": 2, "reproduce": 3, "review": 4, "prove": 5, "answer": 6}
+        priority = {"resolve": 0, "recheck": 1, "adjudicate": 2, "selfcheck": 3, "reproduce": 4, "review": 5,
+                    "prove": 6, "answer": 7}
         return sorted(items, key=lambda i: (any(not lease["mine"] for lease in i["leased"]), -i["impact"],
                                             priority[i["action"]], i["id"]))
 

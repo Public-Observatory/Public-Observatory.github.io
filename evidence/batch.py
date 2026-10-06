@@ -12,8 +12,9 @@ Fields, with the type they hold (a list may be given as a single string):
 
     every line   ref (text), created (ISO 8601 time with a zone)
     ask          parents (questions)
-    claim        kind, answers (questions), depends_on (claims), files, cmd, setup, notes, value
-    review       verdict, method (required), note, superseded_by (a claim)
+    claim        kind, answers (questions), depends_on (claims), refutes (claims), files, cmd, setup,
+                 notes, value
+    review       verdict, method (required), note, superseded_by (a claim), counter (a claim)
 
 A reference is a `ref` given on an earlier line, which takes precedence, or else the id of an object
 on record, or a unique prefix of it of at least six hexadecimal digits; the short prefixes the
@@ -46,9 +47,9 @@ from .store import SAFE_INT, Store, now, parse_value
 
 TYPES = ("ask", "claim", "review")
 FIELDS = {"ask": {"parents"},
-          "claim": {"kind", "answers", "depends_on", "files", "cmd", "setup", "notes", "value"},
-          "review": {"verdict", "method", "note", "superseded_by"}}
-LISTS = ("parents", "answers", "depends_on", "files", "setup", "notes")
+          "claim": {"kind", "answers", "depends_on", "refutes", "files", "cmd", "setup", "notes", "value"},
+          "review": {"verdict", "method", "note", "superseded_by", "counter"}}
+LISTS = ("parents", "answers", "depends_on", "refutes", "files", "setup", "notes")
 ID_PREFIX = re.compile(r"[0-9a-f]{6,64}")
 
 
@@ -136,7 +137,7 @@ def apply(store: Store, lines: list[tuple[int, object]], base: Path = Path("."),
                 a[f] = [a[f]]
             if not (isinstance(a.get(f, []), list) and all(isinstance(x, str) for x in a.get(f, []))):
                 raise EvidenceError(f"{f} must be text or a list of texts")
-        for f in (t, "ref", "created", "kind", "cmd", "verdict", "method", "note", "superseded_by"):
+        for f in (t, "ref", "created", "kind", "cmd", "verdict", "method", "note", "superseded_by", "counter"):
             if f in a and not isinstance(a[f], str):
                 raise EvidenceError(f"{f} must be text")
         if t != "review" and not a[t].strip():
@@ -159,6 +160,7 @@ def apply(store: Store, lines: list[tuple[int, object]], base: Path = Path("."),
                             notes=a.get("notes", []), setup=a.get("setup", []),
                             depends_on=[resolve(d, "claim") for d in a.get("depends_on", [])],
                             answers=[resolve(q, "question") for q in a.get("answers", [])],
+                            refutes=[resolve(x, "claim") for x in a.get("refutes", [])],
                             value=value(a["value"]) if "value" in a else None, created=when, reuse=reuse)
         else:
             kind = "review"
@@ -170,6 +172,7 @@ def apply(store: Store, lines: list[tuple[int, object]], base: Path = Path("."),
             by = a.get("superseded_by")
             h = store.review(resolve(a["review"], "claim"), a["verdict"], a["method"], note=a.get("note", ""),
                              superseded_by=resolve(by, "claim") if by is not None else None,
+                             counter=resolve(a["counter"], "claim") if "counter" in a else None,
                              created=when, reuse=reuse)
         if r is not None:
             refs[r] = (h, kind, n)

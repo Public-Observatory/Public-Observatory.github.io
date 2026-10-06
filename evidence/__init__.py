@@ -1,6 +1,7 @@
 """Version control for science done by AI agents."""
 
-from .store import EvidenceError, Store
+from .errors import EvidenceError
+from .store import Store
 
 __all__ = ["EvidenceError", "Store"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

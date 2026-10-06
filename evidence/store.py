@@ -1,36 +1,90 @@
-"""Content-addressed store of scientific claims and reviews.
+"""Content-addressed store of scientific questions, claims and reviews.
 
 Layout of a store (``.evidence/``)::
 
-    objects/<id[:2]>/<id[2:]>.json   claims and reviews (immutable)
+    objects/<id[:2]>/<id[2:]>.json   questions, claims, reviews, withdrawals, signatures (immutable)
     blobs/<hash[:2]>/<hash[2:]>      evidence files (immutable)
-    config.json                      default author for this store
+    config.json                      author, signing key, trusted keys, remotes (local, never shared)
+    cache/                           verified signatures (local, can be deleted)
 
-Every object is identified by the SHA-256 of its canonical JSON, so two
-stores merge by taking the union of their files: there are no conflicts.
+Every object is identified by the SHA-256 of its canonical JSON, so two stores merge by taking
+the union of their files: there are no conflicts. Every status is a function of the set of objects
+alone, so stores that hold the same objects agree. The one exception is local policy about whose
+reproductions to count as trusted, which lives in config.json.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
-import shutil
-import subprocess
+import platform
+import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import sandbox, signing
+from .errors import EvidenceError
+
 STORE_DIR = ".evidence"
 KINDS = ("result", "negative", "conjecture")
-VERDICTS = ("reproduced", "refuted", "superseded")
+# `inconclusive` records an attempt that could not decide the claim (missing tools, a timeout,
+# a failed download); it never changes a claim's state.
+VERDICTS = ("reproduced", "refuted", "superseded", "inconclusive")
 # When reviews disagree, the strongest verdict wins.
 PRECEDENCE = ("refuted", "superseded", "reproduced", "proposed")
+BROKEN = ("refuted", "superseded")
+STATES = (*PRECEDENCE, "at-risk")
+QUESTION_STATES = ("answered", "proposed", "open")
+# Exit codes of a shell that could not run the command at all.
+CANNOT_RUN = (126, 127)
+HEX = re.compile(r"[0-9a-f]{64}")
 
 
-class EvidenceError(Exception):
-    pass
+# The fields each type of object must have, with their types. References are lists or single ids.
+SCHEMA = {
+    "question": {"text": str, "author": dict, "parents": list, "created": str},
+    "claim": {"kind": str, "statement": str, "author": dict, "evidence": list, "depends_on": list, "created": str},
+    "review": {"claim": str, "verdict": str, "by": dict, "method": str, "note": str, "created": str},
+    "withdrawal": {"review": str, "by": dict, "note": str, "created": str},
+    "signature": {"object": str, "key": str, "signature": str},
+}
+REFERENCES = {"question": ("parents",), "claim": ("depends_on", "answers"), "review": ("claim", "superseded_by"),
+              "withdrawal": ("review",), "signature": ("object",)}
+
+
+def invalid(obj) -> str | None:
+    """Why an object from elsewhere is malformed, or None. Objects are immutable, so one that
+    would break every later command must be refused at the door."""
+    if not isinstance(obj, dict) or not isinstance(obj.get("type"), str):
+        return "not an object with a type"
+    fields = SCHEMA.get(obj["type"])
+    if fields is None:
+        return None  # a type from a newer version; kept, and ignored here
+    for f, t in fields.items():
+        if not isinstance(obj.get(f), t):
+            return f"{obj['type']} needs {f} ({t.__name__})"
+    for f in REFERENCES[obj["type"]]:
+        v = obj.get(f)
+        refs = v if isinstance(v, list) else [] if v is None else [v]
+        if not all(isinstance(r, str) and HEX.fullmatch(r) for r in refs):
+            return f"{obj['type']} has a malformed reference in {f}"
+    if obj["type"] == "claim":
+        if obj["kind"] not in KINDS:
+            return f"unknown kind {obj['kind']!r}"
+        for e in obj["evidence"]:
+            if not isinstance(e, dict) or not isinstance(e.get("kind"), str):
+                return "malformed evidence"
+            if e["kind"] == "file" and not (isinstance(e.get("name"), str) and HEX.fullmatch(str(e.get("blob")))):
+                return "malformed evidence file"
+            if e["kind"] in ("command", "setup") and not isinstance(e.get("cmd"), str):
+                return "malformed evidence command"
+    if obj["type"] == "review" and obj["verdict"] not in VERDICTS:
+        return f"unknown verdict {obj['verdict']!r}"
+    return None
 
 
 def canonical(obj: dict) -> bytes:
@@ -45,11 +99,85 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def identity(author: dict) -> str:
+    """Who stands behind a piece of work: their key, else their lab, else the agent."""
+    return author.get("key") or author.get("lab") or author.get("agent", "")
+
+
+def creator(obj: dict) -> dict:
+    return obj.get("author") or obj.get("by") or {}
+
+
+def words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.lower()))
+
+
 @dataclass
 class Status:
     state: str
     reviews: list[dict]
     at_risk_because: list[str]
+    # Identities other than the author's that reproduced the claim, and those among them whose
+    # keys this store trusts.
+    independent: int = 0
+    trusted: int = 0
+
+    @property
+    def label(self) -> str:
+        return "at-risk" if self.at_risk_because and self.state not in BROKEN else self.state
+
+
+@dataclass
+class QuestionStatus:
+    state: str
+    answers: list[str] = field(default_factory=list)
+    subquestions: list[str] = field(default_factory=list)
+
+
+class Graph:
+    """The dependency graph of a set of claims, with ancestors and descendants as bitsets."""
+
+    def __init__(self, claims: dict[str, dict]):
+        order, seen = [], set()
+        for root in claims:
+            stack = [(root, False)]
+            while stack:
+                h, done = stack.pop()
+                if done:
+                    order.append(h)
+                elif h not in seen:
+                    seen.add(h)
+                    stack.append((h, True))
+                    stack.extend((d, False) for d in claims[h]["depends_on"] if d in claims and d not in seen)
+        # Dependencies come before the claims that rest on them.
+        self.order = order
+        self.bit = {h: 1 << i for i, h in enumerate(order)}
+        self.up = {}
+        for h in order:
+            mask = 0
+            for d in claims[h]["depends_on"]:
+                if d in claims:
+                    mask |= self.bit[d] | self.up[d]
+            self.up[h] = mask
+        self.down = dict.fromkeys(order, 0)
+        for h in reversed(order):
+            for d in claims[h]["depends_on"]:
+                if d in claims:
+                    self.down[d] |= self.bit[h] | self.down[h]
+
+    def members(self, mask: int) -> list[str]:
+        out = []
+        while mask:
+            low = mask & -mask
+            out.append(self.order[low.bit_length() - 1])
+            mask ^= low
+        return out
+
+    def mask(self, hs) -> int:
+        m = 0
+        for h in hs:
+            m |= self.bit.get(h, 0)
+        return m
 
 
 class Store:
@@ -57,6 +185,9 @@ class Store:
         self.root = Path(root)
         if not (self.root / "objects").is_dir():
             raise EvidenceError(f"not an evidence store: {self.root}")
+        self.name = str(self.root)
+        self._objects: dict[str, dict] | None = None
+        self._graph: Graph | None = None
 
     # ------------------------------------------------------------------ setup
 
@@ -65,10 +196,12 @@ class Store:
         root = Path(path) / STORE_DIR
         (root / "objects").mkdir(parents=True, exist_ok=True)
         (root / "blobs").mkdir(exist_ok=True)
-        config = root / "config.json"
-        if author or not config.exists():
-            config.write_text(json.dumps({"author": author or {}}, indent=2) + "\n")
-        return cls(root)
+        # A store may be committed to git to share it; the key and local settings must not be.
+        (root / ".gitignore").write_text("key\nconfig.json\ncache/\n*.tmp\n")
+        store = cls(root)
+        if author or not (root / "config.json").exists():
+            store.configure(author=author or {})
+        return store
 
     @classmethod
     def find(cls, start: Path | None = None) -> "Store":
@@ -80,15 +213,39 @@ class Store:
                 return cls(d / STORE_DIR)
         raise EvidenceError("no .evidence store found (run `ev init`)")
 
+    def config(self) -> dict:
+        path = self.root / "config.json"
+        return json.loads(path.read_text()) if path.exists() else {}
+
+    def configure(self, **changes) -> dict:
+        config = {**self.config(), **changes}
+        (self.root / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+        return config
+
+    def keyfile(self) -> Path | None:
+        if not (key := os.environ.get("EV_KEY") or self.config().get("key")):
+            return None
+        path = Path(key).expanduser()
+        return path if path.is_absolute() else self.root / path
+
     def author(self) -> dict:
-        config = json.loads((self.root / "config.json").read_text())
-        author = dict(config.get("author", {}))
+        author = dict(self.config().get("author", {}))
         for key in ("agent", "model", "lab"):
             if value := os.environ.get(f"EV_{key.upper()}"):
                 author[key] = value
         if "agent" not in author:
             raise EvidenceError("no author: set EV_AGENT or run `ev init --agent NAME`")
+        if keyfile := self.keyfile():
+            author["key"] = signing.public_key(keyfile)
         return author
+
+    def trust(self) -> dict[str, str]:
+        """Public keys this store trusts, with the name each stands for; our own key among them."""
+        trust = dict(self.config().get("trust", {}))
+        if keyfile := self.keyfile():
+            author = self.config().get("author", {})
+            trust.setdefault(signing.public_key(keyfile), author.get("lab") or author.get("agent", "self"))
+        return trust
 
     # ---------------------------------------------------------------- objects
 
@@ -98,149 +255,416 @@ class Store:
     def put_object(self, obj: dict) -> str:
         data = canonical(obj)
         h = digest(data)
-        path = self._path("objects", h)
-        if not path.exists():
-            path.parent.mkdir(exist_ok=True)
-            path.write_bytes(data)
+        self._write("objects", h, data)
+        if self._objects is not None and h not in self._objects:
+            self._objects[h] = json.loads(data)
+            self._graph = None
         return h
 
     def put_blob(self, data: bytes) -> str:
         h = digest(data)
-        path = self._path("blobs", h)
-        if not path.exists():
-            path.parent.mkdir(exist_ok=True)
-            path.write_bytes(data)
+        self._write("blobs", h, data)
         return h
 
+    def _write(self, kind: str, h: str, data: bytes) -> None:
+        path = self._path(kind, h)
+        if not path.exists():
+            path.parent.mkdir(exist_ok=True)
+            # Write then rename, so a reader never sees half an object.
+            tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+            tmp.write_bytes(data)
+            tmp.replace(path)
+
+    def _record(self, obj: dict) -> str:
+        """Store an object authored here, signing it when this store has a key."""
+        h = self.put_object(obj)
+        if keyfile := self.keyfile():
+            sig = self.put_object({"type": "signature", "object": h, "key": creator(obj)["key"],
+                                   "signature": signing.sign(keyfile, h.encode())})
+            self._remember_verified([sig])
+        return h
+
+    def _load(self) -> dict[str, dict]:
+        if self._objects is None:
+            self._objects = {p.parent.name + p.stem: json.loads(p.read_bytes())
+                             for p in (self.root / "objects").glob("*/*.json")}
+        return self._objects
+
     def get(self, h: str) -> dict:
-        return json.loads(self._path("objects", self.resolve(h)).read_bytes())
+        return self._load()[self.resolve(h)]
 
     def blob(self, h: str) -> bytes:
         return self._path("blobs", h).read_bytes()
 
     def ids(self) -> list[str]:
-        return [p.parent.name + p.stem for p in (self.root / "objects").glob("*/*.json")]
+        return list(self._load())
 
-    def resolve(self, prefix: str) -> str:
-        matches = [h for h in self.ids() if h.startswith(prefix)]
-        if not matches:
-            raise EvidenceError(f"unknown id: {prefix}")
-        if len(matches) > 1:
-            raise EvidenceError(f"ambiguous id: {prefix}")
-        return matches[0]
+    def resolve(self, prefix: str, type_: str | None = None) -> str:
+        if prefix not in self._load():
+            matches = [h for h in self.ids() if h.startswith(prefix)]
+            if not matches:
+                raise EvidenceError(f"unknown id: {prefix}")
+            if len(matches) > 1:
+                raise EvidenceError(f"ambiguous id: {prefix}")
+            prefix = matches[0]
+        if type_ and self._load()[prefix]["type"] != type_:
+            raise EvidenceError(f"{prefix[:10]} is not a {type_}")
+        return prefix
 
     def objects(self, type_: str) -> dict[str, dict]:
-        out = {}
-        for h in self.ids():
-            obj = json.loads(self._path("objects", h).read_bytes())
-            if obj["type"] == type_:
-                out[h] = obj
-        return out
+        return {h: obj for h, obj in self._load().items() if obj["type"] == type_}
 
-    # ----------------------------------------------------------------- claims
+    def graph(self) -> Graph:
+        if self._graph is None:
+            self._graph = Graph(self.objects("claim"))
+        return self._graph
+
+    # -------------------------------------------------------------- recording
+
+    def ask(self, text: str, parents: list[str] = ()) -> str:
+        """Record a question; `parents` are the larger questions it helps to settle."""
+        return self._record({
+            "type": "question", "text": text, "author": self.author(),
+            "parents": sorted({self.resolve(p, "question") for p in parents}), "created": now(),
+        })
 
     def claim(self, statement: str, kind: str = "result", files: list[Path] = (),
-              cmd: str | None = None, notes: list[str] = (), depends_on: list[str] = ()) -> str:
+              cmd: str | None = None, notes: list[str] = (), depends_on: list[str] = (),
+              setup: list[str] = (), answers: list[str] = ()) -> str:
         if kind not in KINDS:
             raise EvidenceError(f"kind must be one of {KINDS}")
-        deps = sorted({self.resolve(d) for d in depends_on})
-        for d in deps:
-            if self.get(d)["type"] != "claim":
-                raise EvidenceError(f"{d[:10]} is not a claim")
+        deps = sorted({self.resolve(d, "claim") for d in depends_on})
         evidence = [{"kind": "file", "name": Path(f).name, "blob": self.put_blob(Path(f).read_bytes())}
                     for f in files]
+        # Setup commands prepare the environment; their failure says nothing about the claim.
+        evidence += [{"kind": "setup", "cmd": c} for c in setup]
         if cmd:
             evidence.append({"kind": "command", "cmd": cmd})
         evidence += [{"kind": "note", "text": n} for n in notes]
-        return self.put_object({
-            "type": "claim", "kind": kind, "statement": statement, "author": self.author(),
-            "evidence": evidence, "depends_on": deps, "created": now(),
-        })
+        obj = {"type": "claim", "kind": kind, "statement": statement, "author": self.author(),
+               "evidence": evidence, "depends_on": deps, "created": now()}
+        if answers:
+            obj["answers"] = sorted({self.resolve(q, "question") for q in answers})
+        return self._record(obj)
 
     def review(self, claim: str, verdict: str, method: str, note: str = "",
-               superseded_by: str | None = None) -> str:
+               superseded_by: str | None = None, environment: dict | None = None) -> str:
         if verdict not in VERDICTS:
             raise EvidenceError(f"verdict must be one of {VERDICTS}")
-        claim = self.resolve(claim)
+        claim = self.resolve(claim, "claim")
         if verdict == "superseded":
             if not superseded_by:
                 raise EvidenceError("superseded needs --by CLAIM")
-            superseded_by = self.resolve(superseded_by)
-        return self.put_object({
-            "type": "review", "claim": claim, "verdict": verdict, "by": self.author(),
-            "method": method, "note": note, "superseded_by": superseded_by, "created": now(),
-        })
+            superseded_by = self.resolve(superseded_by, "claim")
+        obj = {"type": "review", "claim": claim, "verdict": verdict, "by": self.author(),
+               "method": method, "note": note, "superseded_by": superseded_by, "created": now()}
+        if environment:
+            obj["environment"] = environment
+        return self._record(obj)
 
-    def verify(self, claim: str, timeout: int = 600) -> tuple[str, str]:
-        """Re-run a claim's command on its evidence files in a clean directory."""
-        claim = self.resolve(claim)
+    def withdraw(self, review: str, note: str = "") -> str:
+        """Take back one of our own reviews. Only the identity that made a review can withdraw it."""
+        review = self.resolve(review, "review")
+        me = self.author()
+        if identity(self.get(review)["by"]) != identity(me):
+            raise EvidenceError("only the author of a review can withdraw it")
+        return self._record({"type": "withdrawal", "review": review, "by": me, "note": note,
+                             "created": now()})
+
+    # ----------------------------------------------------------- verification
+
+    def sandbox_mode(self, requested: str | None = None) -> str:
+        return sandbox.resolve(requested or os.environ.get("EV_SANDBOX") or self.config().get("sandbox", "auto"))
+
+    def verify(self, claim: str, timeout: int = 600, sandbox_mode: str | None = None,
+               unsafe: bool = False) -> tuple[str, str]:
+        """Re-run a claim's command on its evidence files in a clean directory.
+
+        Only a command that runs and fails refutes the claim. A failed setup step, a timeout, a
+        missing program or a refusal by the sandbox is recorded as `inconclusive`, so a broken
+        environment cannot topple a claim and everything built on it.
+        """
+        claim = self.resolve(claim, "claim")
         obj = self.get(claim)
+        setup = [e["cmd"] for e in obj["evidence"] if e["kind"] == "setup"]
         cmds = [e["cmd"] for e in obj["evidence"] if e["kind"] == "command"]
         if not cmds:
             raise EvidenceError("claim has no command to re-run")
+        mode = self.sandbox_mode(sandbox_mode)
+        if mode == "none" and not unsafe and identity(obj["author"]) != identity(self.author()):
+            raise EvidenceError("refusing to run another lab's command without a sandbox "
+                                "(set EV_SANDBOX=docker, or pass --unsafe if you trust it)")
+        env = {**environment(), "sandbox": mode}
         with tempfile.TemporaryDirectory() as work:
-            for e in obj["evidence"]:
-                if e["kind"] == "file":
-                    (Path(work) / e["name"]).write_bytes(self.blob(e["blob"]))
-            try:
-                run = subprocess.run(cmds[0], shell=True, cwd=work, capture_output=True,
-                                     text=True, timeout=timeout)
-                code, output = run.returncode, (run.stdout + run.stderr).strip()
-            except subprocess.TimeoutExpired:
-                code, output = None, f"timed out after {timeout}s"
-        verdict = "reproduced" if code == 0 else "refuted"
+            self.checkout(claim, Path(work))
+            for c in setup:
+                code, output = sandbox.run(c, work, timeout, mode, network=True)
+                if code != 0:
+                    return self.review(claim, "inconclusive", f"setup `{c}` failed (exit {code})",
+                                       note=output[-2000:], environment=env), "inconclusive"
+            code, output = sandbox.run(cmds[0], work, timeout, mode)
+        if code == 0:
+            verdict = "reproduced"
+        elif code is None or code in CANNOT_RUN or sandbox.denied(mode, output):
+            verdict = "inconclusive"
+        else:
+            verdict = "refuted"
+        env["output_sha256"] = digest(output.encode())
         method = f"re-ran `{cmds[0]}` (exit {code})"
-        return self.review(claim, verdict, method, note=output[-2000:]), verdict
+        return self.review(claim, verdict, method, note=output[-2000:], environment=env), verdict
+
+    def checkout(self, claim: str, directory: Path) -> list[Path]:
+        """Write a claim's evidence files into a directory."""
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        out = []
+        for e in self.get(claim)["evidence"]:
+            if e["kind"] == "file":
+                path = directory / Path(e["name"]).name
+                path.write_bytes(self.blob(e["blob"]))
+                out.append(path)
+        return out
 
     # ----------------------------------------------------------------- status
 
+    def withdrawn(self) -> set[str]:
+        reviews = self.objects("review")
+        return {w["review"] for w in self.objects("withdrawal").values()
+                if w["review"] in reviews and identity(reviews[w["review"]]["by"]) == identity(w["by"])}
+
     def statuses(self) -> dict[str, Status]:
         claims = self.objects("claim")
-        reviews = self.objects("review")
+        withdrawn = self.withdrawn()
         by_claim: dict[str, list[dict]] = {h: [] for h in claims}
-        for r in sorted(reviews.values(), key=lambda r: r["created"]):
-            by_claim.setdefault(r["claim"], []).append(r)
+        for h, r in sorted(self.objects("review").items(), key=lambda kv: (kv[1]["created"], kv[0])):
+            if h not in withdrawn:
+                by_claim.setdefault(r["claim"], []).append({"id": h, **r})
 
         own = {}
         for h, rs in by_claim.items():
             verdicts = {r["verdict"] for r in rs} | {"proposed"}
             own[h] = next(v for v in PRECEDENCE if v in verdicts)
 
+        trust = self.trust()
+
+        def name(author: dict) -> str:
+            return trust.get(author.get("key", ""), identity(author))
+
+        g = self.graph()
+        broken = g.mask(h for h in claims if own[h] in BROKEN)
         out = {}
-        for h in claims:
-            broken = [d for d in self.upstream(h, claims) if own.get(d) in ("refuted", "superseded")]
-            out[h] = Status(own[h], by_claim[h], broken)
+        for h, c in claims.items():
+            by = {name(r["by"]) for r in by_claim[h] if r["verdict"] == "reproduced"} - {name(c["author"])}
+            out[h] = Status(own[h], by_claim[h], g.members(g.up[h] & broken), len(by),
+                            len(by & set(trust.values())))
         return out
 
-    def upstream(self, h: str, claims: dict | None = None) -> list[str]:
-        claims = claims if claims is not None else self.objects("claim")
-        seen, stack = [], list(claims[h]["depends_on"])
-        while stack:
-            d = stack.pop()
-            if d not in seen and d in claims:
-                seen.append(d)
-                stack.extend(claims[d]["depends_on"])
-        return seen
+    def question_statuses(self, statuses: dict[str, Status] | None = None) -> dict[str, QuestionStatus]:
+        """A question is answered when a standing reproduced claim answers it, proposed when a
+        standing claim does, and open otherwise."""
+        statuses = statuses if statuses is not None else self.statuses()
+        questions = self.objects("question")
+        out = {h: QuestionStatus("open") for h in questions}
+        for h, q in questions.items():
+            for p in q["parents"]:
+                if p in out:
+                    out[p].subquestions.append(h)
+        for h, c in self.objects("claim").items():
+            for q in c.get("answers", []):
+                if q in out:
+                    out[q].answers.append(h)
+        for qs in out.values():
+            labels = {statuses[a].label for a in qs.answers}
+            qs.state = "answered" if "reproduced" in labels else "proposed" if "proposed" in labels else "open"
+        return out
 
-    def downstream(self, h: str, claims: dict | None = None) -> list[str]:
-        claims = claims if claims is not None else self.objects("claim")
-        return [c for c in claims if h in self.upstream(c, claims)]
+    def upstream(self, h: str) -> list[str]:
+        g = self.graph()
+        return g.members(g.up[h])
+
+    def downstream(self, h: str) -> list[str]:
+        g = self.graph()
+        return g.members(g.down[h])
+
+    # ------------------------------------------------------------- navigation
+
+    def search(self, query: str, limit: int = 10) -> list[tuple[float, str]]:
+        """Claims and questions ranked by shared rare words with the query, dead ends included."""
+        docs = {h: words(" ".join([c["statement"]] + [e.get("text", "") for e in c["evidence"]]))
+                for h, c in self.objects("claim").items()}
+        docs.update({h: words(q["text"]) for h, q in self.objects("question").items()})
+        df: dict[str, int] = {}
+        for d in docs.values():
+            for w in d:
+                df[w] = df.get(w, 0) + 1
+        q = words(query)
+        scored = [(sum(math.log(1 + len(docs) / df[w]) for w in q & d), h) for h, d in docs.items()]
+        return sorted((s for s in scored if s[0] > 0), reverse=True)[:limit]
+
+    def todo(self, me: dict | None = None) -> list[dict]:
+        """Work that would most strengthen the record, highest impact first.
+
+        The impact of work on a claim is the number of claims it would affect: the claim itself and
+        everything built on it. The impact of answering a question is the number of questions it
+        would help settle. Claims by `me` are not offered for reproduction, since that would not be
+        independent; instead each of our runnable claims is offered once for a self-check.
+        """
+        claims = self.objects("claim")
+        statuses = self.statuses()
+        g = self.graph()
+        mine = identity(me) if me else None
+        items = []
+
+        def add(action, h, text, impact, why):
+            items.append({"action": action, "id": h, "statement": text, "impact": impact, "why": why})
+
+        for h, c in claims.items():
+            s = statuses[h]
+            impact = 1 + g.down[h].bit_count()
+            own = mine is not None and identity(c["author"]) == mine
+            runnable = any(e["kind"] == "command" for e in c["evidence"])
+            if s.label == "at-risk":
+                add("recheck", h, c["statement"], impact,
+                    f"rests on {len(s.at_risk_because)} claim(s) no longer standing")
+            elif s.state in BROKEN:
+                continue
+            elif own:
+                if runnable and not s.reviews:
+                    add("selfcheck", h, c["statement"], impact,
+                        "never re-run from a clean directory; run `ev verify` to catch missing files")
+            elif runnable and s.independent == 0:
+                add("reproduce", h, c["statement"], impact, "no independent reproduction; run `ev verify`")
+            elif c["kind"] == "conjecture" and s.state == "proposed":
+                add("prove", h, c["statement"], impact, "open conjecture")
+            elif s.state == "proposed" and not s.reviews:
+                add("review", h, c["statement"], impact, "no reviews and no command to re-run")
+
+        questions = self.objects("question")
+        qstatus = self.question_statuses(statuses)
+        for h, q in questions.items():
+            if qstatus[h].state != "open" or any(qstatus[s].state == "open" for s in qstatus[h].subquestions):
+                continue  # answered, or better approached through an open subquestion
+            ancestors, stack = set(), list(q["parents"])
+            while stack:
+                p = stack.pop()
+                if p in questions and p not in ancestors:
+                    ancestors.add(p)
+                    stack.extend(questions[p]["parents"])
+            add("answer", h, q["text"], 1 + len(ancestors), "open question; claim an answer with --answers")
+
+        priority = {"recheck": 0, "selfcheck": 1, "reproduce": 2, "review": 3, "prove": 4, "answer": 5}
+        return sorted(items, key=lambda i: (-i["impact"], priority[i["action"]], i["id"]))
 
     # ---------------------------------------------------------------- sharing
 
-    def pull(self, other: "Store") -> int:
-        """Copy every object and blob we lack from another store, checking hashes."""
-        copied = 0
-        for kind in ("objects", "blobs"):
-            for src in (other.root / kind).glob("*/*"):
-                h = src.parent.name + src.name.removesuffix(".json")
-                dst = self._path(kind, h)
-                if dst.exists():
-                    continue
-                data = src.read_bytes()
+    def listing(self) -> dict[str, list[str]]:
+        return {kind: sorted(p.parent.name + p.name.removesuffix(".json")
+                             for p in (self.root / kind).glob("*/*") if not p.name.endswith(".tmp"))
+                for kind in ("objects", "blobs")}
+
+    def read(self, kind: str, h: str) -> bytes:
+        return self._path(kind, h).read_bytes()
+
+    def pull(self, source) -> int:
+        """Copy every object and blob we lack from a source, checking hashes and signatures.
+
+        Nothing is written unless everything checks: a corrupt or forged object aborts the pull.
+        """
+        listing = source.listing()
+        have = set(self._load())
+        incoming = {}
+        for h in listing["objects"]:
+            if h in have or not HEX.fullmatch(h):
+                continue
+            data = source.read("objects", h)
+            if digest(data) != h:
+                raise EvidenceError(f"corrupt object in {source.name}: {h}")
+            try:
+                obj = json.loads(data)
+            except ValueError:
+                obj = None
+            if why := invalid(obj):
+                raise EvidenceError(f"malformed object in {source.name}: {h} ({why})")
+            incoming[h] = obj
+        if forged := self.unsigned(incoming):
+            raise EvidenceError(f"{len(forged)} object(s) in {source.name} lack a valid signature by "
+                                f"the key they name, e.g. {forged[0]}")
+        blobs = {}
+        for h in listing["blobs"]:
+            if HEX.fullmatch(h) and not self._path("blobs", h).exists():
+                data = source.read("blobs", h)
                 if digest(data) != h:
-                    raise EvidenceError(f"corrupt {kind[:-1]} in {other.root}: {h}")
-                dst.parent.mkdir(exist_ok=True)
-                shutil.copyfile(src, dst)
-                copied += 1
-        return copied
+                    raise EvidenceError(f"corrupt blob in {source.name}: {h}")
+                blobs[h] = data
+        for h, data in blobs.items():
+            self._write("blobs", h, data)
+        for h, obj in incoming.items():
+            self._write("objects", h, canonical(obj))
+        self._objects = self._graph = None
+        return len(incoming) + len(blobs)
+
+    def push(self, target: "Store") -> int:
+        return target.pull(self)
+
+    # ------------------------------------------------------------- signatures
+
+    def _verified_path(self) -> Path:
+        return self.root / "cache" / "verified"
+
+    def _verified(self) -> set[str]:
+        path = self._verified_path()
+        return set(path.read_text().split()) if path.exists() else set()
+
+    def _remember_verified(self, sigs) -> None:
+        path = self._verified_path()
+        path.parent.mkdir(exist_ok=True)
+        with path.open("a") as f:
+            f.writelines(s + "\n" for s in sigs)
+
+    def unsigned(self, objects: dict[str, dict], recheck: bool = False) -> list[str]:
+        """Ids among `objects` whose creator names a key without a valid signature by it.
+
+        Signatures are looked for among `objects` and in this store. Signatures already in the
+        store were checked when they arrived, unless `recheck`. A signature that does not verify is
+        itself reported.
+        """
+        incoming = {h: o for h, o in objects.items() if o["type"] == "signature"}
+        sigs = {**self.objects("signature"), **incoming}
+        known = self._verified()
+        bad, good = [], []
+        for h, s in (sigs if recheck else incoming).items():
+            if h in known and not recheck:
+                continue
+            (good if signing.verify(s["key"], s["object"].encode(), s["signature"]) else bad).append(h)
+        self._remember_verified(h for h in good if h not in known)
+        valid = {(s["object"], s["key"]) for h, s in sigs.items() if h not in bad}
+        missing = [h for h, o in objects.items()
+                   if o["type"] != "signature" and (key := creator(o).get("key")) and (h, key) not in valid]
+        return sorted(bad + missing)
+
+    def fsck(self) -> list[str]:
+        """Every problem with this store: bad hashes, bad signatures, dangling references."""
+        problems = []
+        for kind in ("objects", "blobs"):
+            for h in self.listing()[kind]:
+                if digest(self.read(kind, h)) != h:
+                    problems.append(f"corrupt {kind[:-1]} {h}")
+        objs = self._load()
+        problems += [f"malformed {h} ({why})" for h, o in objs.items() if (why := invalid(o))]
+        if any(p.startswith("malformed") for p in problems):
+            return problems
+        problems += [f"unsigned or forged {h}" for h in self.unsigned(objs, recheck=True)]
+        for h, o in objs.items():
+            for f in REFERENCES.get(o["type"], ()):
+                v = o.get(f)
+                for r in v if isinstance(v, list) else [v] if v else []:
+                    if r not in objs:
+                        problems.append(f"{o['type']} {h[:10]} refers to missing {r[:10]} ({f})")
+            for e in o.get("evidence", []):
+                if e["kind"] == "file" and not self._path("blobs", e["blob"]).exists():
+                    problems.append(f"claim {h[:10]} is missing evidence file {e['name']}")
+        return problems
+
+
+def environment() -> dict:
+    return {"platform": platform.platform(), "python": platform.python_version()}

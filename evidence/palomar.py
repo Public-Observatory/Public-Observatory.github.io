@@ -156,10 +156,12 @@ class Palomar:
         evidence = [{"kind": "note", "text": e.get("abstract", "")}]
         if src.get("repository") and src.get("commit"):
             path = src.get("project_path") or "."
-            evidence.append({"kind": "command", "cmd": (
+            # A failed download is inconclusive; only a failed build counts against the entry.
+            evidence.append({"kind": "setup", "cmd": (
                 f"git clone -q https://github.com/{src['repository']} repo && cd repo && "
                 f"git checkout -q {src['commit']} && cd {path} && "
-                f"(lake exe cache get >/dev/null 2>&1 || true) && lake build")})
+                f"(lake exe cache get >/dev/null 2>&1 || true)")})
+            evidence.append({"kind": "command", "cmd": f"cd repo/{path} && lake build"})
         for s in prov.get("mathematical_sources", []):
             evidence.append({"kind": "reference", "relationship": s.get("relationship", "other"),
                              "title": s.get("title", ""), "identifier": s.get("identifier", "")})

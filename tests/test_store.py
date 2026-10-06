@@ -1,9 +1,11 @@
+import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from evidence import EvidenceError, Store
+from evidence.store import digest
 
 
 class StoreTest(unittest.TestCase):
@@ -81,6 +83,93 @@ class StoreTest(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             self.a.resolve("nope")
 
+
+    def test_environment_failures_are_inconclusive_not_refutations(self):
+        base = self.a.claim("needs a tool", cmd="no-such-program-xyz")
+        top = self.a.claim("built on it", depends_on=[base])
+        self.assertEqual(self.a.verify(base)[1], "inconclusive")
+        slow = self.a.claim("slow", cmd="sleep 5")
+        self.assertEqual(self.a.verify(slow, timeout=1)[1], "inconclusive")
+        fetch = self.a.claim("fetched", setup=["exit 1"], cmd="true")
+        self.assertEqual(self.a.verify(fetch)[1], "inconclusive")
+        s = self.a.statuses()
+        self.assertEqual(s[base].state, "proposed")
+        self.assertEqual(s[top].label, "proposed")
+
+    def test_verify_records_environment(self):
+        h = self.a.claim("echo", cmd="echo hi")
+        review = self.a.get(self.a.verify(h)[0])
+        self.assertIn("python", review["environment"])
+        self.assertIn("output_sha256", review["environment"])
+
+    def test_only_other_labs_count_as_independent(self):
+        h = self.a.claim("x", cmd="true")
+        self.a.verify(h)
+        self.assertEqual(self.a.statuses()[h].independent, 0)
+        self.b.pull(self.a)
+        self.b.verify(h, unsafe=True)
+        self.assertEqual(self.b.statuses()[h].independent, 1)
+
+    def test_search_finds_dead_ends(self):
+        self.a.claim("Trial division is too slow beyond 10^7.", kind="negative")
+        self.a.claim("Water is wet.")
+        hits = self.a.search("is trial division fast enough?")
+        self.assertEqual(len(hits), 2)
+        self.assertEqual(self.a.get(hits[0][1])["kind"], "negative")
+
+    def test_todo_ranks_by_impact_and_offers_own_claims_only_for_selfcheck(self):
+        base = self.a.claim("lemma", cmd="true")
+        self.a.claim("theorem", depends_on=[base])
+        self.a.claim("open", kind="conjecture")
+        self.assertEqual([t["action"] for t in self.a.todo(self.a.author())], ["selfcheck"])
+        self.a.verify(base)
+        self.assertEqual(self.a.todo(self.a.author()), [])
+        self.b.pull(self.a)
+        todo = self.b.todo(self.b.author())
+        self.assertEqual([(t["action"], t["impact"]) for t in todo],
+                         [("reproduce", 2), ("review", 1), ("prove", 1)])
+        self.a.review(base, "refuted", "counterexample")
+        self.assertEqual(self.a.todo(self.a.author())[0]["action"], "recheck")
+
+    def test_checkout_writes_evidence_files(self):
+        script = self.dir / "check.py"
+        script.write_text("print(1)\n")
+        h = self.a.claim("prints", files=[script], cmd="python3 check.py")
+        out = self.a.checkout(h, self.dir / "work")
+        self.assertEqual([p.read_text() for p in out], ["print(1)\n"])
+
+    def test_upstream_and_downstream(self):
+        a = self.a.claim("a")
+        b = self.a.claim("b", depends_on=[a])
+        c = self.a.claim("c", depends_on=[a, b])
+        self.assertEqual(sorted(self.a.downstream(a)), sorted([b, c]))
+        self.assertEqual(sorted(self.a.upstream(c)), sorted([a, b]))
+        self.assertEqual(self.a.downstream(c), [])
+
+
+    def test_pull_refuses_malformed_objects(self):
+        bad_objects = (
+            {"type": "claim", "statement": "no deps"},
+            {"no": "type"},
+            [1, 2],
+            {"type": "review", "claim": "../../etc", "verdict": "reproduced", "by": {}, "method": "",
+             "note": "", "created": "x"},
+            {"type": "claim", "kind": "result", "statement": "s", "author": {}, "depends_on": [], "created": "x",
+             "evidence": [{"kind": "file", "name": "x", "blob": "nothex"}]},
+        )
+        for i, bad in enumerate(bad_objects):
+            with self.subTest(bad=bad):
+                c = Store.init(self.dir / f"c{i}", {"agent": "carol"})
+                data = json.dumps(bad).encode()
+                c._write("objects", digest(data), data)
+                with self.assertRaises(EvidenceError):
+                    self.b.pull(c)
+                self.assertTrue(any(p.startswith("malformed") for p in Store(c.root).fsck()))
+        # Objects of a type from a newer version pass through and are ignored.
+        c = Store.init(self.dir / "newer", {"agent": "carol"})
+        c.put_object({"type": "dataset", "anything": 1})
+        self.b.pull(c)
+        self.assertEqual(self.b.statuses(), {})
 
 if __name__ == "__main__":
     unittest.main()

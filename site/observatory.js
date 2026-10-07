@@ -28,6 +28,22 @@ const Observatory = (() => {
   const chip = (state) => h("span", { class: `status s-${state}` }, state);
   const safe = (url) => (/^https:\/\//.test(url || "") ? url : null);
 
+  // Markdown links [text](https://...) in untrusted text become anchors, and only https links do; any other
+  // bracketed text stays as written. With `links` off (inside a card, itself a link) only the label is kept.
+  const LINK = /\[([^\]\n]+)\]\((\S+?)\)/g;
+  function rich(text, links = true) {
+    const out = [];
+    let last = 0;
+    for (const m of String(text).matchAll(LINK)) {
+      if (!links || safe(m[2])) {
+        out.push(text.slice(last, m.index), links ? h("a", { href: m[2], rel: "noopener" }, m[1]) : m[1]);
+        last = m.index + m[0].length;
+      }
+    }
+    out.push(text.slice(last));
+    return out;
+  }
+
   // Without KaTeX, if its CDN cannot be reached, the LaTeX is left as it was written.
   function typeset(el) {
     if (!window.renderMathInElement) return;
@@ -134,8 +150,8 @@ const Observatory = (() => {
       return h("a", { class: "card", href: `agenda.html?repo=${encodeURIComponent(e.repo)}` },
         h("div", {}, h("span", { class: "badge" }, KIND[a.kind] || a.kind)),
         h("h2", {}, a.title),
-        h("p", { class: "question" }, a.question),
-        h("p", { class: "summary" }, a.summary),
+        h("p", { class: "question" }, rich(a.question, false)),
+        h("p", { class: "summary" }, rich(a.summary, false)),
         h("div", { class: "bar", title: `${s.answered} of ${s.questions} questions answered` },
           h("span", { style: `width:${pct}%` })),
         h("div", { class: "foot" },
@@ -186,7 +202,7 @@ const Observatory = (() => {
       main.replaceChildren(h("p", { class: "empty" }, `This agenda could not be loaded (${e.message}).`));
       return;
     }
-    document.title = `${entry.agenda.title} · Public Observatory`;
+    document.title = `${entry.agenda.title} · The Public Observatory`;
     main.replaceChildren(...render(entry));
     typeset(main);
     if (data.built) document.getElementById("built").append(`As of ${data.built.slice(0, 16).replace("T", " ")} UTC.`);
@@ -204,8 +220,8 @@ const Observatory = (() => {
     const head = h("div", { class: "agenda-head" },
       h("span", { class: "badge" }, KIND[a.kind] || a.kind),
       h("h1", {}, a.title),
-      h("p", { class: "question" }, a.question),
-      h("p", { class: "summary" }, a.summary),
+      h("p", { class: "question" }, rich(a.question)),
+      h("p", { class: "summary" }, rich(a.summary)),
       h("div", { class: "note" }, "Maintained by ", a.maintainers.map((m, i) => [i ? ", " : "",
         github ? h("a", { href: `https://github.com/${m}` }, m) : m])),
       h("div", { class: "actions" },
@@ -224,11 +240,11 @@ const Observatory = (() => {
       if (seen.has(q.number)) return h("li", { class: "q note" }, `(see #${q.number} above)`);
       seen.add(q.number);
       const li = h("li", { class: "q" },
-        h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, q.text), chip(q.status)),
+        h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, rich(q.text)), chip(q.status)),
         h("div", { class: "q-meta" }, link(q),
           github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "answer it")),
         (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
-          h("div", { class: "answer" }, h("span", { class: "text" }, c.text), h("span", { class: "note" }, c.author, " · ", link(c))))) : null);
+          h("div", { class: "answer" }, h("span", { class: "text" }, rich(c.text)), h("span", { class: "note" }, c.author, " · ", link(c))))) : null);
       const subs = entry.questions.filter((x) => x.parents.includes(q.number));
       if (subs.length) li.append(h("ul", {}, subs.map(node)));
       return li;
@@ -239,7 +255,7 @@ const Observatory = (() => {
 
     const list = (title, items, row, none) => h("section", {}, h("h2", {}, title),
       items.length ? h("ul", { class: "list" }, items.map(row)) : h("p", { class: "note" }, none));
-    const claimRow = (c) => h("li", {}, h("div", { class: "text" }, c.text),
+    const claimRow = (c) => h("li", {}, h("div", { class: "text" }, rich(c.text)),
       h("div", { class: "why" }, c.author, " · ", link(c), c.comments ? ` · ${plural(c.comments, "comment")}` : ""));
 
     // A claim that answers an answered question is shown under that question, and only there.

@@ -1,6 +1,6 @@
 # The Public Observatory
 
-A public index of research agendas: questions, with their motivation and their decomposition into smaller questions, posed by anyone and worked on in public by people, laboratories and their agents. The website is at <https://public-observatory.github.io/observatory/>. `VISION.md` says what the Observatory is for.
+A public index of research agendas: questions, with their motivation and their decomposition into smaller questions, posed by anyone and worked on in public by people, laboratories and their agents. The website is at <https://public-observatory.github.io/>. `VISION.md` says what the Observatory is for.
 
 ## How it works
 
@@ -33,10 +33,4 @@ python3 site/build.py local _site DIR...                       # index agendas i
 python3 -m http.server -d _site                                # and serve it
 ```
 
-A local agenda directory holds `agenda.json` and, optionally, `issues.json`, a list of issues as the GitHub API returns them.
-
-## Setting up the organisation
-
-1. Make this repository public, so that agendas' workflows can fetch `site/agenda.py` from it. Set its variable `OBSERVATORY_PAGES` to `true` and its Pages source to GitHub Actions, so that `.github/workflows/site.yml` publishes the website.
-2. Create `agenda-template` from `agenda-template/` and mark it as a template repository.
-3. Pose the first agendas from the template, following its README. The variable `OBSERVATORY_REPO` points an agenda's check at another copy of this repository.
+A local agenda directory holds `agenda.json` and, optionally, `issues.json`, a list of issues as the GitHub API returns them. An agenda's check fetches `site/agenda.py` from this repository; the agenda's variable `OBSERVATORY_REPO` points it at another copy.

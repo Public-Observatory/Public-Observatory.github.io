@@ -1,6 +1,6 @@
 # observatory
 
-This repository is `Public-Observatory/observatory` on GitHub: the website of the Public Observatory, a public index of research agendas kept as git repositories, and the template from which agendas are made. Read `VISION.md` for the aim and `README.md` for how it works before changing behaviour.
+This repository is `Public-Observatory/Public-Observatory.github.io` on GitHub: the website of the Public Observatory, a public index of research agendas kept as git repositories, and the template from which agendas are made. Read `VISION.md` for the aim and `README.md` for how it works before changing behaviour.
 
 ## Commands
 

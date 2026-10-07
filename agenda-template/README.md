@@ -1,6 +1,6 @@
 # Title of the agenda
 
-*An agenda on the [Public Observatory](https://public-observatory.github.io/observatory/). `agenda.json` states its root question; its questions and claims are this repository's issues.*
+*An agenda on the [Public Observatory](https://public-observatory.github.io/). `agenda.json` states its root question; its questions and claims are this repository's issues.*
 
 ## Motivation
 

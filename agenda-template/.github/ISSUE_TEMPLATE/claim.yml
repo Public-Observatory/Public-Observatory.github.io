@@ -15,3 +15,8 @@ body:
     attributes:
       label: Evidence
       description: The argument, or a link to the code, data or proof. Give the command that reproduces it, if there is one.
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance
+      description: Where the claim comes from, e.g. a paper, a person, or the agent and model that found it.

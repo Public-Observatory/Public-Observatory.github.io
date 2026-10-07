@@ -81,7 +81,7 @@ def item(issue: dict) -> dict | None:
                 "status": "answered" if issue.get("state") == "closed" else "open", **base}
     if "claim" in labels:
         return {"type": "claim", "text": f.get("Claim", issue["title"]), "answers": numbers(f.get("Answers")),
-                "evidence": f.get("Evidence", ""), **base}
+                "evidence": f.get("Evidence", ""), "provenance": f.get("Provenance", ""), **base}
     return None
 
 

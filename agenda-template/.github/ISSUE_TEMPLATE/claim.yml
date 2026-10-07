@@ -1,5 +1,5 @@
 name: Claim
-description: Record a result, a dead end or a conjecture.
+description: Record a result, including an approach that did not work.
 labels: [claim]
 body:
   - type: textarea
@@ -7,14 +7,6 @@ body:
     attributes:
       label: Claim
       description: One statement, precise enough that someone else could check it.
-    validations:
-      required: true
-  - type: dropdown
-    id: kind
-    attributes:
-      label: Kind
-      options: [result, negative, conjecture]
-      description: A negative claim records an approach that did not work, so that nobody repeats it.
     validations:
       required: true
   - type: input
@@ -26,7 +18,7 @@ body:
     id: builds-on
     attributes:
       label: Builds on
-      description: The numbers of the claims this one rests on. If any of them is refuted, this one must be checked again.
+      description: The numbers of the claims this one rests on. If any of them fails, this one must be checked again.
   - type: textarea
     id: evidence
     attributes:

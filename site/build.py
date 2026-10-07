@@ -68,7 +68,7 @@ def numbers(text: str | None) -> list[int]:
 
 def item(issue: dict) -> dict | None:
     """A question or claim from an issue, or None for any other issue or a pull request. A question's text
-    is its `Question` field and a claim's is its title; earlier forms used `Claim` and `Part of`."""
+    is its `Question` field and a claim's is its title; earlier forms used `Claim`, and placed a question under another by `Part of` or `Subquestion of`."""
     if "pull_request" in issue:
         return None
     labels = sorted(l["name"] if isinstance(l, dict) else l for l in issue.get("labels", []))

@@ -9,11 +9,6 @@ body:
       description: One question, precise enough that one could tell when it has been answered. Give it a short title too.
     validations:
       required: true
-  - type: input
-    id: part-of
-    attributes:
-      label: Subquestion of
-      description: Optional. The question this one helps to answer, e.g. #12. Leave it empty if it bears on the agenda's root question.
   - type: textarea
     id: motivation
     attributes:

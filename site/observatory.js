@@ -1,6 +1,7 @@
 // The Observatory's pages. Everything shown comes from agendas.json, written by build.py from each
 // agenda's agenda.json and its issues. Text from issues is untrusted, so it is only ever inserted as
-// text, never as HTML.
+// text, never as HTML. Mathematics in it, written as LaTeX between $...$ or $$...$$, is then typeset by
+// KaTeX, which builds its own markup from the text and, with `trust` off, follows no links.
 "use strict";
 
 const Observatory = (() => {
@@ -26,6 +27,14 @@ const Observatory = (() => {
   const mark = (state) => h("span", { class: `mark s-${state}`, title: state }, MARK[state] || "·");
   const chip = (state) => h("span", { class: `status s-${state}` }, state);
   const safe = (url) => (/^https:\/\//.test(url || "") ? url : null);
+
+  // Without KaTeX, if its CDN cannot be reached, the LaTeX is left as it was written.
+  function typeset(el) {
+    if (!window.renderMathInElement) return;
+    renderMathInElement(el, { throwOnError: false, trust: false,
+      delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false },
+                   { left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }] });
+  }
 
   async function json(url) {
     const r = await fetch(url, { cache: "no-cache" });
@@ -134,6 +143,7 @@ const Observatory = (() => {
         })
         .sort(order[state.sort]);
       cards.replaceChildren(...shown.map(card));
+      typeset(cards);
       empty.hidden = shown.length > 0;
       empty.textContent = data.agendas.length ? "No agenda matches." : "No agendas yet. Pose the first one.";
     }
@@ -167,6 +177,7 @@ const Observatory = (() => {
     }
     document.title = `${entry.agenda.title} · Public Observatory`;
     main.replaceChildren(...render(entry));
+    typeset(main);
     if (data.built) document.getElementById("built").append(`As of ${data.built.slice(0, 16).replace("T", " ")} UTC.`);
   }
 

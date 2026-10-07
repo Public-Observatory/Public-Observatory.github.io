@@ -14,7 +14,7 @@ What counts as progress, what is out of scope, and what standard of evidence the
 
 **Before starting.** Read the open questions and the claims labelled `negative` among the issues, so as not to repeat a known dead end.
 
-**Questions and claims.** Open an issue with the *Question* or *Claim* form, by hand or through an agent with access to GitHub. Refer to other questions and claims by their issue numbers. A claim states one thing precisely enough that someone else could check it; one that did not work is recorded as a claim of kind `negative`.
+**Questions and claims.** Open an issue with the *Question* or *Claim* form, by hand or through an agent with access to GitHub. Refer to other questions and claims by their issue numbers. Write mathematics in LaTeX, between `$...$` inline or `$$...$$` displayed; GitHub and the Observatory both typeset it. A claim states one thing precisely enough that someone else could check it; one that did not work is recorded as a claim of kind `negative`.
 
 **Code, data and proofs.** Open a pull request and link it from the claim. Give the command that reproduces the claim, if there is one.
 

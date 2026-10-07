@@ -136,3 +136,6 @@ ol.list, ul.list { margin: 0; padding: 0; list-style: none; }
 .note { color: var(--muted); font-size: 0.88rem; }
 footer.site { border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.85rem; }
 footer.site .wrap { padding-top: 18px; padding-bottom: 28px; }
+
+/* Display mathematics scrolls rather than widening the page. */
+.katex-display { overflow-x: auto; overflow-y: hidden; }

@@ -33,9 +33,60 @@ const Observatory = (() => {
     return r.json();
   }
 
+  // A native <select> opens the operating system's menu, which no stylesheet reaches. This draws the
+  // menu in the page's own style and keeps the <select>, hidden, as the source of truth: choosing an
+  // option sets its value and fires its "change", so listeners and the page without JavaScript work.
+  function menu(select) {
+    const options = [...select.options];
+    const label = h("span", {}, select.selectedOptions[0].text);
+    const button = h("button", { type: "button", class: "menu-button", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": select.getAttribute("aria-label") }, label);
+    const list = h("ul", { class: "menu-list", role: "listbox", tabindex: "-1", hidden: true });
+    const items = options.map((o, i) => h("li", { role: "option", id: `${select.id}-${i}`, "aria-selected": String(o.selected), onclick: () => choose(i), onmousemove: () => focus(i) }, o.text));
+    list.append(...items);
+    let active = select.selectedIndex;
+
+    function focus(i) {
+      active = (i + items.length) % items.length;
+      items.forEach((it, j) => it.classList.toggle("active", j === active));
+      list.setAttribute("aria-activedescendant", items[active].id);
+      items[active].scrollIntoView({ block: "nearest" });
+    }
+    function toggle(open) {
+      list.hidden = !open;
+      button.setAttribute("aria-expanded", String(open));
+      if (open) { focus(select.selectedIndex); list.focus(); }
+    }
+    function choose(i) {
+      toggle(false);
+      button.focus();
+      if (i === select.selectedIndex) return;
+      select.selectedIndex = i;
+      label.textContent = options[i].text;
+      items.forEach((it, j) => it.setAttribute("aria-selected", String(j === i)));
+      select.dispatchEvent(new Event("change"));
+    }
+
+    button.addEventListener("click", () => toggle(list.hidden));
+    button.addEventListener("keydown", (ev) => {
+      if (["ArrowDown", "ArrowUp"].includes(ev.key)) { ev.preventDefault(); toggle(true); }
+    });
+    list.addEventListener("keydown", (ev) => {
+      const keys = { ArrowDown: () => focus(active + 1), ArrowUp: () => focus(active - 1), Home: () => focus(0), End: () => focus(items.length - 1),
+        Enter: () => choose(active), " ": () => choose(active), Escape: () => { toggle(false); button.focus(); }, Tab: () => toggle(false) };
+      if (!keys[ev.key]) return;
+      if (ev.key !== "Tab") ev.preventDefault();
+      keys[ev.key]();
+    });
+    const wrap = h("div", { class: "menu" }, button, list);
+    document.addEventListener("click", (ev) => { if (!wrap.contains(ev.target)) toggle(false); });
+    select.hidden = true;
+    select.after(wrap);
+  }
+
   // ------------------------------------------------------------------ the index
 
   async function index() {
+    menu(document.getElementById("sort"));
     const cards = document.getElementById("cards");
     const empty = document.getElementById("empty");
     let data;

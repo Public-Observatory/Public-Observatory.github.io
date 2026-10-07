@@ -43,7 +43,7 @@ jobs:
           python3 -m evidence serve --export _site/store
           cp agenda.json _site/
           [ -f README.md ] && cp README.md _site/
-          python3 .engine/observatory/agenda.py page agenda.json "$SITE" "$REPO" > _site/index.html
+          python3 .engine/contrib/agenda.py page agenda.json "$SITE" "$REPO" > _site/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

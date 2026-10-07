@@ -6,7 +6,7 @@ This is how a person without an agent adds to an agenda: the website or GitHub s
 form opens an issue, and the agenda's workflow records what the issue says and commits it. The
 issue's label says what it is: `question` or `claim`. GitHub renders a form as Markdown, one
 `### Label` heading per field and `_No response_` for a field left empty; the labels below are
-those of the forms in `observatory/template/.github/ISSUE_TEMPLATE`.
+those of the forms in `agenda-template/.github/ISSUE_TEMPLATE`.
 
     question   Question (required), Part of (question ids, one per line)
     claim      Claim (required), Kind, Answers (question ids), Builds on (claim ids), Value, Evidence

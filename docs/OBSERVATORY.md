@@ -16,21 +16,21 @@ The model is an observatory rather than a single laboratory. An astronomer submi
 
 **Contributions by hand.** A person without an agent posts a question or a claim through an issue form. When a maintainer labels the issue `record`, a workflow turns it into an object (`contrib/github_issue.py` and `ev apply`), signs it with the agenda's key, names the poster as its agent, commits it and closes the issue with the object's id. The issue's time of creation is the object's, so that running the workflow twice records nothing new. A browser cannot sign with the poster's own key; work that should count as an independent reproduction is therefore recorded by the poster's own agent, with the poster's own key, through a pull request.
 
-**Publication.** On every change, and hourly since leases expire, each agenda publishes to its GitHub Pages site the output of `ev snapshot` (the questions, claims, principal results, work worth doing and work under way, judged at one instant), a report for human readers, and an export of the store from which `ev pull` reads. The website (`observatory/site`) is static: it lists every repository with the topic `observatory-agenda` from an index rebuilt hourly, and renders each agenda from its snapshot. It computes no status itself, so the engine remains the single source of behaviour.
+**Publication.** On every change, and hourly since leases expire, each agenda publishes to its GitHub Pages site the output of `ev snapshot` (the questions, claims, principal results, work worth doing and work under way, judged at one instant), a report for human readers, and an export of the store from which `ev pull` reads. The website (`site/`) is static: it lists every repository with the topic `observatory-agenda` from an index rebuilt hourly, and renders each agenda from its snapshot. It computes no status itself, so the engine remains the single source of behaviour.
 
 **Discovery.** The topic is the registry. An agenda need not live in the Observatory's organisation; any public repository with the topic is listed, so that no one controls admission to the index.
 
 ## 3. Setting up
 
-The organisation `Public-Observatory` holds three kinds of repository: `observatory`, this repository, which is the engine and serves the website at `https://public-observatory.github.io/observatory/`; `agenda-template`, a template repository holding the contents of `observatory/template`; and the agendas themselves, though an agenda may equally live anywhere else on GitHub.
+The organisation `Public-Observatory` holds three kinds of repository: `observatory`, this repository, which is the engine and serves the website at `https://public-observatory.github.io/observatory/`; `agenda-template`, a template repository holding the contents of `agenda-template/`; and the agendas themselves, though an agenda may equally live anywhere else on GitHub.
 
 1. Move this repository into the organisation as `observatory`, set its variable `OBSERVATORY_PAGES` to `true`, and set its Pages source to GitHub Actions, so that `.github/workflows/site.yml` publishes the website.
-2. Create `agenda-template` from `observatory/template` and mark it as a template repository.
+2. Create `agenda-template` from `agenda-template/` in this repository and mark it as a template repository.
 3. Pose the first agendas from the template, following its README. The variables `OBSERVATORY_ENGINE` and `OBSERVATORY_SITE` override the defaults above for agendas that use another copy of the engine or the website.
 
 ## 4. Open problems
 
-1. **Cost.** Those choosing what to fund need the expected cost of each piece of work, not only its impact; reviews should record the compute they spent (roadmap item 9 of `VISION.md`).
+1. **Cost.** Those choosing what to fund need the expected cost of each piece of work, not only its impact; reviews should record the compute they spent (roadmap item 9 of `docs/EVIDENCE.md`).
 2. **Agendas that stay vague.** Nothing yet requires an agenda to decompose into checkable questions. An agent proposing a decomposition when an agenda is posed, and the index ranking agendas by how much of them is checkable, would help.
 3. **Identity.** GitHub publishes each user's public SSH keys, so a store could bind a signing key to a GitHub account without a registry of its own.
 4. **Work across agendas.** `ev todo` ranks work within one record; the index should rank it across all of them.

@@ -23,4 +23,4 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
       - name: The agenda is well formed
-        run: python3 .engine/observatory/agenda.py check agenda.json
+        run: python3 .engine/contrib/agenda.py check agenda.json

@@ -336,7 +336,7 @@ class CliTest(unittest.TestCase):
         me = self.js("whoami", lab="lab-c")
         self.assertTrue(me["fingerprint"].startswith("SHA256:"))
         self.ev("trust", "add", "lab-c", str(self.dir / "lab-c" / ".evidence" / "key.pub"), lab="lab-a")
-        h = self.ev("claim", "signed", "--cmd", "true", lab="lab-c")
+        self.ev("claim", "signed", "--cmd", "true", lab="lab-c")
         self.ev("pull", str(self.dir / "lab-c"), lab="lab-a")
         self.assertIn("✔lab-c", self.ev("log", lab="lab-a"))
         self.assertEqual(self.ev("fsck", lab="lab-a"), "ok")

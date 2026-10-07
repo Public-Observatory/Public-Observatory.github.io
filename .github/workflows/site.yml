@@ -1,11 +1,11 @@
-# The Observatory's website: the pages in observatory/site and an index of every repository with the
+# The Observatory's website: the pages in site/ and an index of every repository with the
 # topic `observatory-agenda`, rebuilt hourly and deployed to this repository's GitHub Pages. It runs
 # only once the repository variable OBSERVATORY_PAGES is `true` (after Pages is set to GitHub Actions).
 name: site
 on:
   push:
     branches: [main]
-    paths: [observatory/**]
+    paths: [site/**, contrib/agenda.py]
   schedule:
     - cron: "41 * * * *"
   workflow_dispatch:
@@ -30,8 +30,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p _site
-          cp observatory/site/*.html observatory/site/*.css observatory/site/*.js _site/
-          python3 observatory/site/build.py github _site
+          cp site/*.html site/*.css site/*.js _site/
+          python3 site/build.py github _site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -1,9 +1,9 @@
 """An agenda: a repository holding a record (`.evidence/`) and a file `agenda.json` that says what it is for.
 
-    python3 observatory/agenda.py check agenda.json    exit 1, with the reasons, if the file is malformed
-    python3 observatory/agenda.py seed agenda.json     the root question, as a line for `ev apply`
-    python3 observatory/agenda.py owner agenda.json    the name under which the root question is asked
-    python3 observatory/agenda.py page agenda.json SITE OWNER/REPO
+    python3 contrib/agenda.py check agenda.json    exit 1, with the reasons, if the file is malformed
+    python3 contrib/agenda.py seed agenda.json     the root question, as a line for `ev apply`
+    python3 contrib/agenda.py owner agenda.json    the name under which the root question is asked
+    python3 contrib/agenda.py page agenda.json SITE OWNER/REPO
                                                        a page sending readers of the agenda's own
                                                        site to the Observatory at SITE
 

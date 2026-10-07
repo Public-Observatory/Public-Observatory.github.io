@@ -1,8 +1,8 @@
 """Build `agendas.json`, the index the Observatory's website reads.
 
-    python3 observatory/site/build.py github OUT [TOPIC]     agendas on GitHub with the topic (default
+    python3 site/build.py github OUT [TOPIC]     agendas on GitHub with the topic (default
                                                               observatory-agenda), read from their Pages
-    python3 observatory/site/build.py local OUT DIR...       agendas in local directories, for previews
+    python3 site/build.py local OUT DIR...       agendas in local directories, for previews
 
 Each agenda is a repository holding `agenda.json` and a record, whose publish workflow puts
 `snapshot.json` on its GitHub Pages site. The index carries, for each agenda, the agenda file, where
@@ -22,21 +22,18 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "observatory"))
+sys.path.insert(0, str(ROOT / "contrib"))
 
 import agenda as agendas  # noqa: E402
+from evidence.report import snapshot  # noqa: E402
+from evidence.store import STORE_DIR, Store, now  # noqa: E402
 
 TOPIC = "observatory-agenda"
 LIMIT = 2 << 20  # bytes read from any one file
-
-
-def now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 def fetch(url: str, token: str | None = None) -> bytes:
@@ -84,8 +81,6 @@ def from_github(topic: str = TOPIC, token: str | None = None, get=fetch) -> tupl
 
 
 def from_local(dirs: list[Path], out: Path) -> tuple[list[dict], list[str]]:
-    from evidence.report import snapshot
-    from evidence.store import STORE_DIR, Store
     at = now()
     entries, skipped = [], []
     for d in dirs:

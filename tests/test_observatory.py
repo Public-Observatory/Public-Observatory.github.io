@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "observatory"))
-sys.path.insert(0, str(ROOT / "observatory" / "site"))
+sys.path.insert(0, str(ROOT / "contrib"))
+sys.path.insert(0, str(ROOT / "site"))
 
 import agenda  # noqa: E402
 import build  # noqa: E402
@@ -35,7 +35,7 @@ class AgendaTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_template_is_a_valid_agenda(self):
-        self.assertEqual(agenda.problems(json.loads((ROOT / "observatory" / "template" / "agenda.json").read_text())), [])
+        self.assertEqual(agenda.problems(json.loads((ROOT / "agenda-template" / "agenda.json").read_text())), [])
 
     def test_problems(self):
         self.assertEqual(agenda.problems(GOOD), [])

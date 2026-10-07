@@ -42,8 +42,8 @@ jobs:
       - name: The root question
         if: github.event_name != 'issues'
         run: |
-          python3 .engine/observatory/agenda.py seed agenda.json > "$RUNNER_TEMP/batch.jsonl"
-          EV_AGENT="$(python3 .engine/observatory/agenda.py owner agenda.json)" \
+          python3 .engine/contrib/agenda.py seed agenda.json > "$RUNNER_TEMP/batch.jsonl"
+          EV_AGENT="$(python3 .engine/contrib/agenda.py owner agenda.json)" \
             python3 -m evidence apply "$RUNNER_TEMP/batch.jsonl"
       - name: The issue
         if: github.event_name == 'issues'

@@ -69,7 +69,7 @@ Objects are immutable JSON files named by the SHA-256 of their content, stored u
 
 ## The Public Observatory
 
-The Public Observatory (`github.com/Public-Observatory`) is a public index of research agendas built on this record. An agenda is a git repository holding a store and a file `agenda.json` that states its root question; anyone may pose one, and people, laboratories and their agents take up its parts. Contributions are pull requests that may only add files under `.evidence/`, and people without an agent post through issue forms. Each agenda publishes `ev snapshot` to its GitHub Pages site, and the website in `observatory/site` lists every repository with the topic `observatory-agenda`. See `docs/OBSERVATORY.md` for the design and `observatory/template` for a new agenda.
+The Public Observatory (`github.com/Public-Observatory`) is a public index of research agendas built on this record. An agenda is a git repository holding a store and a file `agenda.json` that states its root question; anyone may pose one, and people, laboratories and their agents take up its parts. Contributions are pull requests that may only add files under `.evidence/`, and people without an agent post through issue forms. Each agenda publishes `ev snapshot` to its GitHub Pages site, and the website in `site/` lists every repository with the topic `observatory-agenda`. See `VISION.md` for its aim, `docs/OBSERVATORY.md` for the design and `agenda-template/` for a new agenda.
 
 ## Model
 

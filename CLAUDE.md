@@ -1,6 +1,6 @@
-# evidence
+# observatory
 
-Version control for science done by AI agents. Read `CONTEXT.md` for the mission and `README.md` for the user-facing model before changing behaviour.
+This repository (`Public-Observatory/observatory` on GitHub) holds two things: `evidence`, version control for science done by AI agents (the Python package and the `ev` command), and the Public Observatory, a public index of research agendas built on it. Read `VISION.md` for the Observatory's aim, `docs/EVIDENCE.md` for the engine's thesis and roadmap, `docs/OBSERVATORY.md` for the Observatory's design, and `README.md` for the user-facing model before changing behaviour.
 
 ## Commands
 
@@ -25,7 +25,9 @@ uv run --no-project --python 3.10 python -m unittest discover -s tests       # t
 - `evidence/mcp.py`: MCP server over stdio; each tool maps to CLI arguments, so the CLI is the single source of behaviour.
 - `evidence/report.py`: digest, Markdown and LaTeX reports, Graphviz output. `evidence/guide.py`: the agent instructions.
 - `evidence/palomar.py`: importer for the Palomar registry of Lean-verified mathematics. Network access goes through an injectable `fetch`, so tests use a dict.
-- `observatory/`: the Observatory, a public index of research agendas kept as git repositories. `agenda.py` checks `agenda.json` and seeds the root question; `template/` is a new agenda's repository (workflows that check pull requests with `ev fsck --since`, record issue forms through `contrib/github_issue.py`, and publish `ev snapshot` to Pages); `site/` is the static website and `build.py` its index. See `docs/OBSERVATORY.md`.
+- `site/`: the Observatory's static website; `build.py` builds its index of agendas.
+- `agenda-template/`: a new agenda's repository, published as the template repository `Public-Observatory/agenda-template` (workflows that check pull requests with `ev fsck --since`, record issue forms, and publish `ev snapshot` to Pages).
+- `contrib/`: scripts outside the package. `agenda.py` checks `agenda.json` and seeds the root question, and `github_issue.py` turns an issue form into a batch; the agenda workflows call both. `runs.py` is a worked example of a harness adapter.
 - `bench/planted.py`: benchmark with planted errors, dead ends and questions, a scripted baseline, and a scorer.
 - `tests/`: one file per module, plus `test_cli.py` (argv in, JSON and exit codes out), `test_mcp.py` (a JSON-RPC session), and `test_properties.py` (random multi-lab histories against a brute-force oracle, merge convergence, scale).
 
@@ -57,8 +59,7 @@ The aim is infrastructure on which autonomous agents do the exploratory work of 
 Open problems, roughly in order:
 
 1. Run real agents on `bench/planted.py` (several models, several runs each) and fix whatever they stumble on; add harder worlds (ML experiments, Lean proofs).
-2. Structured results: claims carrying a quantity with units and uncertainty, so that two standing answers to one question that disagree are detected and the question marked contested.
-3. Better search: the bag-of-words ranking misses paraphrases. Embeddings would need a dependency or a service; consider an optional hook.
-4. Discovery: a way to find other labs' stores (a registry, or stores announcing their remotes).
-5. Cost accounting: reviews recording compute spent, so that `todo` can weigh impact against cost.
-6. Revocation of a compromised key, and key rotation for a lab.
+2. Better search: the bag-of-words ranking misses paraphrases. Embeddings would need a dependency or a service; consider an optional hook.
+3. Discovery: a way to find other labs' stores (a registry, or stores announcing their remotes).
+4. Cost accounting: reviews recording compute spent, so that `todo` can weigh impact against cost.
+5. Revocation of a compromised key, and key rotation for a lab.

@@ -1,0 +1,16 @@
+name: Question
+description: Pose a question that would help settle this agenda.
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: One question, stated so that one could tell when it has been answered.
+    validations:
+      required: true
+  - type: input
+    id: part-of
+    attributes:
+      label: Part of
+      description: The number of the larger question this helps to settle, e.g. #12. Leave empty if it bears directly on the agenda's root question.

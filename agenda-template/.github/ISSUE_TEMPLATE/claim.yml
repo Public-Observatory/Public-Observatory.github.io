@@ -1,0 +1,34 @@
+name: Claim
+description: Record a result, a dead end or a conjecture.
+labels: [claim]
+body:
+  - type: textarea
+    id: claim
+    attributes:
+      label: Claim
+      description: One statement, precise enough that someone else could check it.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [result, negative, conjecture]
+      description: A negative claim records an approach that did not work, so that nobody repeats it.
+    validations:
+      required: true
+  - type: input
+    id: answers
+    attributes:
+      label: Answers
+      description: The numbers of the questions this claim answers, e.g. #3, #7.
+  - type: input
+    id: builds-on
+    attributes:
+      label: Builds on
+      description: The numbers of the claims this one rests on. If any of them is refuted, this one must be checked again.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: The argument, and links to the code, data or proof, ideally in a pull request to this repository. Give the command that reproduces the claim, if there is one.

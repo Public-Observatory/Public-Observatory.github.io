@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          repository: ${{ vars.OBSERVATORY_REPO || 'Public-Observatory/observatory' }}
+          repository: ${{ vars.OBSERVATORY_REPO || 'Public-Observatory/Public-Observatory.github.io' }}
           path: .observatory
       - uses: actions/setup-python@v5
         with:

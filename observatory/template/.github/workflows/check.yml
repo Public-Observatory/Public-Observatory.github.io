@@ -1,0 +1,26 @@
+# Every pull request: the record only grows, every object is sound and signed by the key it names,
+# and agenda.json is well formed. A bad object can never be removed once merged, so it must not be.
+name: check
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.OBSERVATORY_ENGINE || 'Public-Observatory/observatory' }}
+          path: .engine
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The record only grows, and every object is sound
+        run: PYTHONPATH=.engine python3 -m evidence fsck --since "origin/$BASE"
+        env:
+          BASE: ${{ github.base_ref }}
+      - name: The agenda is well formed
+        run: python3 .engine/observatory/agenda.py check agenda.json

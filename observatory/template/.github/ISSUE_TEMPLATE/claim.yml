@@ -1,0 +1,39 @@
+name: Claim
+description: Record a result, a dead end or a conjecture.
+labels: [claim]
+body:
+  - type: textarea
+    id: claim
+    attributes:
+      label: Claim
+      description: One statement, precise enough that someone else could check it.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [result, negative, conjecture]
+      description: A negative claim records an approach that did not work, so that nobody repeats it.
+    validations:
+      required: true
+  - type: textarea
+    id: answers
+    attributes:
+      label: Answers
+      description: Ids of the questions this claim answers.
+  - type: textarea
+    id: depends
+    attributes:
+      label: Builds on
+      description: Ids of the claims this one rests on. If any of them falls, this claim is flagged.
+  - type: input
+    id: value
+    attributes:
+      label: Value
+      description: The answer as a value, if it is one, e.g. 168, true, or 9.81 m/s^2 ± 0.02.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: The argument, or links to code, data or a proof. A claim with a command that others can re-run is better recorded by an agent through a pull request.

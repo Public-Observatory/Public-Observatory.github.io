@@ -483,6 +483,84 @@ class CliTest(unittest.TestCase):
         self.assertEqual((shown["kind"], [e["name"] for e in shown["evidence"] if e["kind"] == "file"]),
                          ("result", ["result.json"]))
 
+    def test_snapshot_is_the_record_at_one_instant(self):
+        q = self.ev("ask", "How many primes are there below 1000?", lab="lab-a")
+        c = self.ev("claim", "There are 168 primes below 1000.", "--cmd", "true", "--answers", q, "--value", "168",
+                    lab="lab-a")
+        self.ev("pull", str(self.dir / "lab-a"), lab="lab-b")
+        self.ev("verify", c, "--unsafe", lab="lab-b")
+        open_q = self.ev("ask", "How many twin primes are there below 1000?", lab="lab-b")
+        self.ev("lease", open_q, "--for", "1h", "--note", "trying a sieve", lab="lab-b")
+        lease = self.js("todo", lab="lab-b")[0]["leased"][0]
+        start = self.js("show", lease["id"], lab="lab-b")["created"]
+        snap = self.js("snapshot", "--at", start, lab="lab-b")
+        self.assertEqual(snap, self.js("snapshot", "--at", start, lab="lab-b"))  # no clock, no file order
+        self.assertEqual((snap["format"], snap["at"]), (1, start))
+        self.assertEqual(snap["questions"], self.js("questions", lab="lab-b"))
+        self.assertEqual(snap["claims"], self.js("log", lab="lab-b"))
+        self.assertEqual([d["id"] for d in snap["digest"]], [c])
+        self.assertEqual([t["id"] for t in snap["todo"]], [open_q])
+        self.assertEqual((snap["counts"]["reproduced"], snap["counts"]["answered"]), (1, 1))
+        self.assertEqual({r["author"]["agent"]: (r["questions"], r["claims"], r["reviews"])
+                          for r in snap["contributors"]}, {"alice": (1, 1, 0), "bob": (1, 0, 1)})
+        self.assertEqual([(l["target"], l["note"]) for l in snap["leases"]], [(open_q, "trying a sieve")])
+        self.assertEqual(self.js("snapshot", "--at", lease["until"], lab="lab-b")["leases"], [])  # expired
+        self.assertIn("1 answered", self.ev("snapshot", "--at", start, lab="lab-b"))
+        self.ev("snapshot", "--at", "soon", lab="lab-b", ok=(2,))
+
+    def test_fsck_since_refuses_a_rewritten_record(self):
+        import shutil
+        import subprocess
+        if not shutil.which("git"):
+            self.skipTest("needs git")
+        repo = self.dir / "lab-a"
+
+        def git(*argv):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(repo), *argv],
+                           check=True, capture_output=True)
+
+        git("init", "-q")
+        first = self.ev("claim", "x", lab="lab-a")
+        git("add", "-A")
+        git("commit", "-qm", "x")
+        self.ev("claim", "y", lab="lab-a")
+        self.assertEqual(self.ev("fsck", "--since", "HEAD", lab="lab-a"), "ok")  # added files are welcome
+        path = repo / ".evidence" / "objects" / first[:2] / f"{first[2:]}.json"
+        path.unlink()
+        out = json.loads(self.ev("fsck", "--since", "HEAD", "--json", lab="lab-a", ok=(1,)))
+        self.assertTrue(any(p.startswith("deleted since HEAD:") and first[2:] in p for p in out), out)
+        self.ev("fsck", "--since", "no-such-rev", lab="lab-a", ok=(2,))
+
+    def test_issue_forms_become_objects_once(self):
+        import subprocess
+        import sys
+        adapter = Path(__file__).resolve().parent.parent / "contrib" / "github_issue.py"
+        url = "https://github.com/o/agenda/issues/"
+
+        def post(n, label, body):
+            event = self.dir / f"issue-{n}.json"
+            event.write_text(json.dumps({"action": "opened", "issue": {
+                "number": n, "labels": [{"name": label}], "body": body, "html_url": url + str(n),
+                "created_at": "2026-10-07T12:00:00Z"}}))
+            r = subprocess.run([sys.executable, str(adapter), str(event)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return self.js("apply", self.batch(r.stdout.splitlines(), f"issue-{n}.jsonl"), lab="lab-a")
+
+        root = self.ev("ask", "Which sieve is fastest below 10^9?", lab="lab-a")
+        q = post(1, "question", f"### Question\n\nIs a segmented sieve faster below 10^9?\n\n### Part of\n\n{root[:10]}\n")
+        qid = q["refs"]["issue-1"]
+        self.assertEqual(self.js("show", qid, lab="lab-a")["parents"], [root])
+        c = post(2, "claim", f"### Claim\n\nIt is, by a factor of three.\n\n### Kind\n\nresult\n\n"
+                             f"### Answers\n\n{qid[:8]}\n\n### Builds on\n\n_No response_\n\n### Value\n\n3\n\n"
+                             f"### Evidence\n\nTimed on one laptop.\n")
+        shown = self.js("show", c["refs"]["issue-2"], lab="lab-a")
+        self.assertEqual((shown["answers"], shown["value"], shown["depends_on"]), ([qid], {"exact": 3}, []))
+        self.assertEqual([e["text"] for e in shown["evidence"]], ["Timed on one laptop.", f"posted as {url}2"])
+        self.assertEqual(post(2, "claim", f"### Claim\n\nIt is, by a factor of three.\n\n### Kind\n\nresult\n\n"
+                                          f"### Answers\n\n{qid[:8]}\n\n### Builds on\n\n_No response_\n\n"
+                                          f"### Value\n\n3\n\n### Evidence\n\nTimed on one laptop.\n")["new"], 0)
+        self.assertEqual(post(3, "discussion", "### Anything\n\nhello\n")["new"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,7 @@ ev digest                    # the report in short: reproduced claims that most 
 ev report --format tex       # the state of the record for human readers (md or tex)
 ev graph | dot -Tsvg > g.svg
 ev checkout 3baae1d9 work/   # a claim's evidence files, to build on
+ev snapshot --json           # the whole record as one document for a static site (--at TIME judges leases)
 ```
 
 Every read command takes `--json`. Exit codes: 0 success, 1 a negative finding (`check` found claims at risk, `verify` refuted), 2 a usage error, 3 `verify` inconclusive.
@@ -60,10 +61,15 @@ ev remote add shared ../shared --push && ev push   # a push target: `ev push`, `
 ev serve --port 8000                               # read-only HTTP; --export DIR for a static host
 ev trust add lab-b lab-b.pub                       # count lab-b's reproductions as trusted
 ev fsck                                            # check hashes, signatures, schema and references
+ev fsck --since origin/main                        # and refuse a git change that alters or deletes an object
 ev whoami
 ```
 
 Objects are immutable JSON files named by the SHA-256 of their content, stored under `.evidence/`. Pulling is a union of sets, so there are no conflicts, and every status is a function of the objects alone, so labs that have exchanged everything agree. `pull` checks every hash, the structure of every object, and every signature, and writes nothing unless all pass. It fetches only the evidence files that the claims it receives refer to.
+
+## The Public Observatory
+
+The Public Observatory (`github.com/Public-Observatory`) is a public index of research agendas built on this record. An agenda is a git repository holding a store and a file `agenda.json` that states its root question; anyone may pose one, and people, laboratories and their agents take up its parts. Contributions are pull requests that may only add files under `.evidence/`, and people without an agent post through issue forms. Each agenda publishes `ev snapshot` to its GitHub Pages site, and the website in `observatory/site` lists every repository with the topic `observatory-agenda`. See `docs/OBSERVATORY.md` for the design and `observatory/template` for a new agenda.
 
 ## Model
 

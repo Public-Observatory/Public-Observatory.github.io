@@ -14,7 +14,7 @@ from pathlib import Path
 from . import batch, report, sandbox, signing
 from .guide import GUIDE
 from .palomar import PALOMAR_ID, Palomar
-from .remote import open_source, serve
+from .remote import open_source, rewritten, serve
 from .store import KINDS, LIMITS, STATES, VERDICTS, EvidenceError, Store, format_value
 from .store import now as store_now
 
@@ -215,18 +215,8 @@ def verify(ids: list[str], args, store: Store) -> None:
 
 def cmd_log(args) -> None:
     store = Store.find()
-    claims = store.objects("claim")
-    statuses = store.statuses()
-    trust = store.trust()
-    rows = []
-    for h, c in sorted(claims.items(), key=lambda kv: kv[1]["created"]):
-        state = statuses[h].label
-        if args.status and state != args.status:
-            continue
-        row = {"id": h, "status": state, "kind": c["kind"], "statement": c["statement"],
-               "author": c["author"], "created": c["created"], "self_checked": statuses[h].self_checked,
-               "disputed": statuses[h].disputed}
-        rows.append({**row, "value": c["value"]} if "value" in c else row)
+    statuses, trust = store.statuses(), store.trust()
+    rows = [r for r in report.claim_rows(store) if not args.status or r["status"] == args.status]
     lines = [f"{MARK[r['status']]} {short(r['id'])}  {r['status']:<10} {kind_tag(r['kind'])}{r['statement']}"
              f"{value_tag(r)}{markers(statuses[r['id']])}  — {who(r['author'], trust)}" for r in rows]
     emit(args, rows, "\n".join(lines) or "no claims")
@@ -310,11 +300,7 @@ def cmd_questions(args) -> None:
     store = Store.find()
     questions, claims = store.objects("question"), store.objects("claim")
     qs = store.question_statuses()
-    data = [{"id": h, "text": q["text"], "status": qs[h].state, "parents": q["parents"],
-             "answers": qs[h].answers, "standing": qs[h].standing, "subquestions": qs[h].subquestions,
-             "values": {a: claims[a]["value"] for a in qs[h].answers if "value" in claims[a]},
-             "conflicts": qs[h].conflicts}
-            for h, q in sorted(questions.items(), key=lambda kv: (kv[1]["created"], kv[0]))]
+    data = report.question_rows(store)
     roots = [d["id"] for d in data if not any(p in questions for p in d["parents"])]
 
     def line(h: str, depth: int) -> str:
@@ -347,6 +333,15 @@ def cmd_digest(args) -> None:
              f"reproduced by {d['independent']} other lab(s), {d['trusted']} trusted · "
              f"{d['reviews']} review(s)" for i, d in enumerate(data, 1)]
     emit(args, data, "\n".join(lines) or "nothing reproduced yet")
+
+
+def cmd_snapshot(args) -> None:
+    """Everything a static site needs to show the record, judged at one instant."""
+    data = report.snapshot(Store.find(), reference_time(args.at), args.n)
+    c = data["counts"]
+    emit(args, data, f"{data['at']}: {c['questions']} question(s), {c['answered']} answered; "
+                     f"{c['claims']} claim(s), {c['reproduced']} reproduced, {c['refuted']} refuted; "
+                     f"{len(data['todo'])} item(s) to do, {len(data['leases'])} lease(s) held")
 
 
 def cmd_search(args) -> None:
@@ -501,7 +496,8 @@ def cmd_serve(args) -> None:
 
 
 def cmd_fsck(args) -> None:
-    problems = Store.find().fsck()
+    store = Store.find()
+    problems = store.fsck() + (rewritten(store, args.since) if args.since else [])
     emit(args, problems, "\n".join(problems) or "ok")
     if problems:
         sys.exit(1)
@@ -623,6 +619,12 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("-n", type=int, default=5)
     s.set_defaults(func=cmd_digest)
 
+    s = sub.add_parser("snapshot", parents=[js], help="the whole record as one JSON document for a "
+                       "static site, with leases judged at one time")
+    s.add_argument("--at", metavar="TIME", help="judge leases at this ISO 8601 time (default: now)")
+    s.add_argument("-n", type=int, default=50, help="items of todo to include")
+    s.set_defaults(func=cmd_snapshot)
+
     s = sub.add_parser("search", parents=[js], help="find related claims and questions, dead ends included")
     s.add_argument("query")
     s.add_argument("-n", type=int, default=10)
@@ -707,6 +709,8 @@ def parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("fsck", parents=[js], help="check hashes, signatures and references (exit 1 if bad)")
+    s.add_argument("--since", metavar="REV", help="also fail if a git commit since REV changed or deleted "
+                   "an object or file: a shared record only grows")
     s.set_defaults(func=cmd_fsck)
 
     s = sub.add_parser("mcp", help="serve this store to AI agents over the Model Context Protocol (stdio)")

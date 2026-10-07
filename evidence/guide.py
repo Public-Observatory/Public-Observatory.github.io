@@ -90,6 +90,12 @@ names the line; fix it and apply the whole batch again. Re-applying records noth
 --json maps each ref to its id. Give "created" when the same run may be applied in several
 places, so that every lab obtains the same ids.
 
+Working on a shared agenda (a git repository holding the store, as on the Observatory): pull
+before you start, record as usual, then commit only the new files under .evidence/ and open a
+pull request. Never change or delete a file there; the check refuses it (`ev fsck --since`).
+A lease reaches others only once merged, so for long work open a pull request holding the lease
+alone first.
+
 Conventions: every read command takes --json. Exit codes: 0 success, 1 a negative finding
 (check found claims at risk, verify refuted), 2 a usage error, 3 verify was inconclusive.
 Ids may be abbreviated to any unique prefix. Never fabricate a reproduction: a review says what

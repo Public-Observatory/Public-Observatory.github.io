@@ -30,6 +30,54 @@ def digest(store: Store, n: int = 5) -> list[dict]:
              "independent": i, "reviews": r} for d, t, i, r, h in ranked[:n]]
 
 
+def claim_rows(store: Store) -> list[dict]:
+    """Every claim with its status, oldest first: what `ev log --json` prints."""
+    statuses = store.statuses()
+    rows = []
+    for h, c in sorted(store.objects("claim").items(), key=lambda kv: (kv[1]["created"], kv[0])):
+        s = statuses[h]
+        rows.append({"id": h, "status": s.label, "kind": c["kind"], "statement": c["statement"],
+                     "author": c["author"], "created": c["created"], "self_checked": s.self_checked,
+                     "disputed": s.disputed, **({"value": c["value"]} if "value" in c else {})})
+    return rows
+
+
+def question_rows(store: Store) -> list[dict]:
+    """Every question with its state, answers and subquestions, oldest first: `ev questions --json`."""
+    questions, claims = store.objects("question"), store.objects("claim")
+    qs = store.question_statuses()
+    return [{"id": h, "text": q["text"], "status": qs[h].state, "parents": q["parents"],
+             "answers": qs[h].answers, "standing": qs[h].standing, "subquestions": qs[h].subquestions,
+             "values": {a: claims[a]["value"] for a in qs[h].answers if "value" in claims[a]},
+             "conflicts": qs[h].conflicts}
+            for h, q in sorted(questions.items(), key=lambda kv: (kv[1]["created"], kv[0]))]
+
+
+def contributors(store: Store) -> list[dict]:
+    """Who has written to the record, and how much, most active first. Identities are told apart
+    as statuses tell them apart: by key, else by lab, else by agent."""
+    out: dict[str, dict] = {}
+    for kind, field in (("question", "author"), ("claim", "author"), ("review", "by")):
+        for _, o in sorted(store.objects(kind).items(), key=lambda kv: (kv[1]["created"], kv[0])):
+            a = o[field]  # a fixed order, not the order of files, picks the name shown
+            row = out.setdefault(store_identity(a), {"author": a, "questions": 0, "claims": 0, "reviews": 0})
+            row[kind + "s"] += 1
+    total = {i: r["questions"] + r["claims"] + r["reviews"] for i, r in out.items()}
+    return [out[i] for i in sorted(out, key=lambda i: (-total[i], i))]
+
+
+def snapshot(store: Store, at: str, n: int = 50) -> dict:
+    """The whole state of the record at time `at`, for a static site to render without our code.
+
+    It is a function of the objects and `at` alone (leases are judged at `at`, never at the clock),
+    so that a site built twice from one commit is built the same."""
+    leases = [{"target": t, "by": lease["by"], "until": lease["until"], "note": lease["note"]}
+              for t, held in sorted(store.leases(at).items()) for lease in held]
+    return {"format": 1, "at": at, "counts": sections(store)[0], "questions": question_rows(store),
+            "claims": claim_rows(store), "digest": digest(store, ITEMS), "todo": store.todo(None, at=at)[:n],
+            "leases": leases, "contributors": contributors(store)}
+
+
 def sections(store: Store) -> tuple[dict, list[tuple[str, list[str]]]]:
     """Counts, and (title, items) pairs whose items are plain sentences."""
     claims = store.objects("claim")

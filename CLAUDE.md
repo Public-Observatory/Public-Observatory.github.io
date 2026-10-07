@@ -25,6 +25,7 @@ uv run --no-project --python 3.10 python -m unittest discover -s tests       # t
 - `evidence/mcp.py`: MCP server over stdio; each tool maps to CLI arguments, so the CLI is the single source of behaviour.
 - `evidence/report.py`: digest, Markdown and LaTeX reports, Graphviz output. `evidence/guide.py`: the agent instructions.
 - `evidence/palomar.py`: importer for the Palomar registry of Lean-verified mathematics. Network access goes through an injectable `fetch`, so tests use a dict.
+- `observatory/`: the Observatory, a public index of research agendas kept as git repositories. `agenda.py` checks `agenda.json` and seeds the root question; `template/` is a new agenda's repository (workflows that check pull requests with `ev fsck --since`, record issue forms through `contrib/github_issue.py`, and publish `ev snapshot` to Pages); `site/` is the static website and `build.py` its index. See `docs/OBSERVATORY.md`.
 - `bench/planted.py`: benchmark with planted errors, dead ends and questions, a scripted baseline, and a scorer.
 - `tests/`: one file per module, plus `test_cli.py` (argv in, JSON and exit codes out), `test_mcp.py` (a JSON-RPC session), and `test_properties.py` (random multi-lab histories against a brute-force oracle, merge convergence, scale).
 

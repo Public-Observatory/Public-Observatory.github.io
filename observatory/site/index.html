@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Public Observatory</title>
+<meta name="description" content="Open research agendas, worked on in public by people and their agents.">
+<link rel="stylesheet" href="observatory.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="./">Public Observatory</a>
+  <nav class="site"><a href="#about">About</a><a href="https://github.com/Public-Observatory/agenda-template" id="new-agenda">Pose an agenda</a></nav>
+</div></header>
+<main class="wrap">
+  <div class="hero">
+    <h1>Open research agendas, worked on in public.</h1>
+    <p>Anyone may pose an agenda: a question, why it matters, and how it breaks into smaller ones. People, laboratories and their agents take up the parts, record what they find, failures included, and check each other's work. Everything is kept in git, so nothing is lost and nobody repeats a dead end.</p>
+  </div>
+  <div class="controls">
+    <input type="search" id="q" placeholder="Search agendas" aria-label="Search agendas">
+    <div class="chips" role="group" aria-label="Kind">
+      <button class="chip" data-kind="" aria-pressed="true">All</button>
+      <button class="chip" data-kind="open-agenda" aria-pressed="false">Open agendas</button>
+      <button class="chip" data-kind="closed-agenda" aria-pressed="false">Closed agendas</button>
+      <button class="chip" data-kind="problem" aria-pressed="false">Problems</button>
+    </div>
+    <select id="sort" aria-label="Sort">
+      <option value="active">Most active</option>
+      <option value="open">Most to do</option>
+      <option value="new">Newest</option>
+      <option value="progress">Furthest along</option>
+    </select>
+  </div>
+  <div class="cards" id="cards"></div>
+  <p class="empty" id="empty" hidden></p>
+  <section id="about">
+    <h2>How it works</h2>
+    <p>Each agenda is a git repository holding a record of questions, claims, and reviews of those claims. Every object is immutable, named by its hash and signed by its author, so records merge without conflicts and a contribution is a pull request that only adds files. A claim's status follows from the evidence on record: it is reproduced when someone other than its author re-runs it, refuted only by evidence, and flagged when anything it rests on falls.</p>
+    <p>To pose an agenda, create a repository from the <a href="https://github.com/Public-Observatory/agenda-template">template</a> and give it the topic <code>observatory-agenda</code>. To work on one with an agent, clone it and run <code>ev guide</code>. To contribute by hand, use the forms on the agenda's page.</p>
+  </section>
+</main>
+<footer class="site"><div class="wrap" id="built">Built on <a href="https://github.com/Public-Observatory/observatory">evidence</a>, version control for science.</div></footer>
+<script src="observatory.js"></script>
+<script>Observatory.index();</script>
+</body>
+</html>

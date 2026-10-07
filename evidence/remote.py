@@ -94,6 +94,23 @@ def open_source(spec: str):
         yield local(Path(spec))
 
 
+def rewritten(store, rev: str) -> list[str]:
+    """Objects and files of a store kept in git that were changed or deleted since the commit `rev`.
+
+    A shared record only grows: an object, once others may have pulled it, can be superseded but
+    never altered, and a deletion would be undone by the next pull from anyone who holds it. A
+    repository that accepts contributions as pull requests runs this against the base of each, so
+    that a contribution may add files to the store and nothing else."""
+    r = subprocess.run(["git", "diff", "--name-status", "--no-renames", rev, "--", "objects", "blobs"],
+                       cwd=store.root, capture_output=True, text=True)
+    if r.returncode:
+        raise EvidenceError(f"git diff {rev}: {r.stderr.strip() or 'failed'}")
+    words = {"M": "changed", "D": "deleted", "T": "changed"}
+    return [f"{words.get(status[0], 'altered')} since {rev}: {path}"
+            for status, _, path in (line.partition("\t") for line in r.stdout.splitlines())
+            if not status.startswith("A")]
+
+
 def serve(store, host: str = "127.0.0.1", port: int = 8000) -> ThreadingHTTPServer:
     """A read-only HTTP server for a store; the caller runs `serve_forever()`."""
 

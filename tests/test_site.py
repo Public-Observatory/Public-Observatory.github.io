@@ -29,7 +29,8 @@ ISSUES = [
     issue(2, "question", "### Question\n\nIs LMO faster than a sieve at 10^12?\n\n### Subquestion of\n\n#1\n\n"
                          "### Motivation\n\n_No response_"),
     issue(3, "claim", "### Claim\n\npi(10^12) = 37607912018.\n\n### Answers\n\n#1\n\n"
-                                 "### Evidence\n\nSee #9; run `make check`."),
+                                 "### Evidence\n\nSee #9; run `make check`.\n\n"
+                                 "### Provenance\n\nComputed by an agent."),
     issue(4, "claim", "### Claim\n\nTrial division is too slow beyond 10^7.", user={"login": "bob"}),
     issue(5, "claim", "### Claim\n\npi(1000) = 169.\n\n### Answers\n\n"
                               "https://github.com/Lab/primes/issues/1, 2"),
@@ -72,6 +73,7 @@ class IssuesTest(unittest.TestCase):
         self.assertEqual(sorted(claims), [3, 4, 5])  # not the bug report, not the pull request
         self.assertEqual(claims[3]["answers"], [1])
         self.assertIn("make check", claims[3]["evidence"])
+        self.assertEqual((claims[3]["provenance"], claims[4]["provenance"]), ("Computed by an agent.", ""))
         self.assertEqual((claims[4]["answers"], claims[5]["answers"]), ([], [1, 2]))
         self.assertEqual(e["summary"], {"questions": 2, "answered": 1, "claims": 3, "contributors": 2})
 

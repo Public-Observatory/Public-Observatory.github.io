@@ -16,6 +16,7 @@ Set GITHUB_TOKEN to search with a higher rate limit. Standard library only.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -105,6 +106,18 @@ def issues_of(full: str, token: str | None, get) -> list[dict]:
     return out
 
 
+def readme_of(full: str, token: str | None, get) -> dict | None:
+    """Use GitHub's README discovery (including .github/ and docs/ READMEs)."""
+    try:
+        data = json.loads(get(f"https://api.github.com/repos/{full}/readme", token))
+        return {"text": base64.b64decode(data["content"]).decode("utf-8"),
+                "url": data["html_url"], "raw_url": data["download_url"]}
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        # A missing README must not hide the agenda and its questions.
+        print(f"README unavailable for {full}: {e}", file=sys.stderr)
+        return None
+
+
 def from_github(topic: str = TOPIC, token: str | None = None, get=fetch) -> tuple[list[dict], list[str]]:
     q = urllib.parse.quote(f"topic:{topic}")
     found = json.loads(get(f"https://api.github.com/search/repositories?q={q}&per_page=100", token))
@@ -116,7 +129,8 @@ def from_github(topic: str = TOPIC, token: str | None = None, get=fetch) -> tupl
             if bad := agendas.problems(agenda):
                 raise ValueError("; ".join(bad))
             out.append(entry(full, agenda, issues_of(full, token, get), url=r["html_url"],
-                             stars=r["stargazers_count"], pushed=r["pushed_at"]))
+                             stars=r["stargazers_count"], pushed=r["pushed_at"],
+                             readme=readme_of(full, token, get)))
         except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError) as e:
             skipped.append(f"{full}: {e}")
     return out, skipped
@@ -128,7 +142,9 @@ def from_local(dirs: list[Path]) -> tuple[list[dict], list[str]]:
         try:
             agenda = agendas.load(d / "agenda.json")
             issues = json.loads((d / "issues.json").read_text()) if (d / "issues.json").exists() else []
-            entries.append(entry(f"local/{d.name}", agenda, issues))
+            readme = next((p for p in (d / "README.md", d / "readme.md", d / "README") if p.exists()), None)
+            entries.append(entry(f"local/{d.name}", agenda, issues,
+                                 readme={"text": readme.read_text()} if readme else None))
         except (OSError, ValueError, KeyError, TypeError) as e:
             skipped.append(f"{d}: {e}")
     return entries, skipped

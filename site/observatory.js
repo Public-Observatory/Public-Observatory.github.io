@@ -1,5 +1,6 @@
 // The Observatory's pages. Everything shown comes from agendas.json, written by build.py from each
-// agenda's agenda.json and its issues. Text from issues is untrusted, so it is only ever inserted as
+// agenda's agenda.json, README and issues. README HTML is sanitized with DOMPurify.
+// Text from issues is untrusted, so it is only ever inserted as
 // text, never as HTML. Mathematics in it, written as LaTeX between $...$ or $$...$$, is then typeset by
 // KaTeX, which builds its own markup from the text and, with `trust` off, follows no links.
 "use strict";
@@ -190,6 +191,50 @@ const Observatory = (() => {
 
   // ------------------------------------------------------------------ one agenda
 
+  function readmeSection(readme, github) {
+    const section = h("section", { class: "readme", id: "readme" },
+      h("div", { class: "readme-source note" }, "From the repository README",
+        safe(readme?.url) && h("a", { href: readme.url }, "Read on GitHub ↗")));
+    if (!readme?.text) {
+      section.append(h("p", { class: "note" }, "The README is not available in this snapshot.",
+        github && [" ", h("a", { href: `${github}#readme` }, "Read it on GitHub"), "."]));
+      return section;
+    }
+    const body = h("article", { class: "readme-body" });
+    if (!window.marked || !window.DOMPurify) {
+      body.append(h("pre", { class: "readme-fallback" }, readme.text));
+    } else {
+      // Keep LaTeX intact through Markdown parsing; KaTeX runs on the sanitized DOM.
+      const parser = new marked.Marked({ extensions: [{
+        name: "math", level: "inline",
+        start: (src) => src.search(/\$|\\[([]/),
+        tokenizer(src) {
+          const match = /^(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/.exec(src);
+          if (match) return { type: "math", raw: match[0] };
+        },
+        renderer: (token) => h("span", {}, token.raw).outerHTML,
+      }] });
+      body.append(DOMPurify.sanitize(parser.parse(readme.text), {
+        RETURN_DOM_FRAGMENT: true, USE_PROFILES: { html: true },
+        FORBID_TAGS: ["style", "form", "input", "button"],
+        FORBID_ATTR: ["style", "srcset"],
+      }));
+      // Resolve repository-relative links and images against the actual README location.
+      for (const el of body.querySelectorAll("a[href], img[src]")) {
+        const attr = el.tagName === "IMG" ? "src" : "href";
+        const value = el.getAttribute(attr);
+        const base = attr === "src" ? readme.raw_url : readme.url;
+        try {
+          const url = new URL(value, base || github);
+          if (!["https:", "http:", ...(attr === "href" ? ["mailto:"] : [])].includes(url.protocol)) throw new Error();
+          el.setAttribute(attr, url.href);
+        } catch { el.removeAttribute(attr); }
+      }
+    }
+    section.append(body);
+    return section;
+  }
+
   async function agenda() {
     const main = document.getElementById("main");
     const repo = new URLSearchParams(location.search).get("repo") || "";
@@ -225,9 +270,11 @@ const Observatory = (() => {
       h("div", { class: "note" }, "Maintained by ", a.maintainers.map((m, i) => [i ? ", " : "",
         github ? h("a", { href: `https://github.com/${m}` }, m) : m])),
       h("div", { class: "actions" },
-        github && h("a", { class: "button primary", href: form("question.yml", {}) }, "Pose a question"),
+        github && h("a", { class: "button primary", href: github }, "View on GitHub ↗"),
+        h("a", { class: "button", href: "#readme" }, "Read the agenda"),
+        github && h("a", { class: "button", href: form("question.yml", {}) }, "Pose a question"),
         github && h("a", { class: "button", href: form("claim.yml", {}) }, "Record a claim"),
-        github && h("a", { class: "button", href: github }, "Repository")));
+      ));
 
     const stats = h("div", { class: "stats" },
       [[`${s.answered}/${s.questions}`, "questions answered"], [s.claims, "claims"], [s.contributors, "contributors"]]
@@ -263,12 +310,8 @@ const Observatory = (() => {
     const claims = list("Claims", entry.claims.filter((c) => !settled(c)), claimRow, entry.claims.length
       ? "Every claim answers an answered question and is shown under it."
       : "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
-    const contribute = h("section", {}, h("h2", {}, "How to contribute"),
-      h("p", { class: "note" }, "Pose a question or record a claim with the buttons above: state the question or the claim, and everything else is optional. A failed approach is a claim too, so that nobody repeats it. Anyone may check a claim and say in its issue what they did and what happened."));
-
-    return [head, stats, h("div", { class: "layout" },
-      h("div", {}, tree, claims),
-      h("aside", {}, contribute))];
+    return [head, readmeSection(entry.readme, github), stats,
+      h("div", { class: "agenda-activity" }, tree, claims)];
   }
 
   return { index, agenda };

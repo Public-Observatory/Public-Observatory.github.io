@@ -1,5 +1,6 @@
 """The website's builder: agenda files, issues read as questions and claims, and the index."""
 
+import base64
 import json
 import subprocess
 import sys
@@ -100,11 +101,14 @@ class IndexTest(unittest.TestCase):
 
     def test_local_index(self):
         good = self.agenda_dir("primes", GOOD, ISSUES)
+        (good / "README.md").write_text("# Primes\n\nThe motivation.")
         bare = self.agenda_dir("bare", {**GOOD, "title": "Bare"})
         bad = self.agenda_dir("broken", {**GOOD, "kind": "wish"})
         entries, skipped = build.from_local([good, bare, bad])
         self.assertEqual([(e["repo"], e["summary"]["claims"]) for e in entries], [("local/primes", 3), ("local/bare", 0)])
         self.assertEqual(len(skipped), 1)
+        self.assertEqual(entries[0]["readme"]["text"], "# Primes\n\nThe motivation.")
+        self.assertIsNone(entries[1]["readme"])
         self.assertIn("kind must be one of", skipped[0])
         out = self.dir / "site"
         build.write(out, entries)
@@ -119,6 +123,10 @@ class IndexTest(unittest.TestCase):
             "https://api.github.com/search/repositories?q=topic%3Aobservatory-agenda&per_page=100":
                 {"items": [repo, {**repo, "full_name": "Lab/gone"}, {**repo, "full_name": "Lab/bad"}]},
             "https://raw.githubusercontent.com/Lab/primes/main/agenda.json": GOOD,
+            "https://api.github.com/repos/Lab/primes/readme": {
+                "content": base64.b64encode("# Motivation\n\nA café.".encode()).decode(),
+                "html_url": "https://github.com/Lab/primes/blob/main/docs/README.md",
+                "download_url": "https://raw.githubusercontent.com/Lab/primes/main/docs/README.md"},
             "https://api.github.com/repos/Lab/primes/issues?state=all&per_page=100&page=1": page1,
             "https://api.github.com/repos/Lab/primes/issues?state=all&per_page=100&page=2": ISSUES,
             "https://raw.githubusercontent.com/Lab/bad/main/agenda.json": {**GOOD, "maintainers": []},
@@ -132,6 +140,11 @@ class IndexTest(unittest.TestCase):
         entries, skipped = build.from_github(get=get)
         self.assertEqual([(e["repo"], e["stars"], e["summary"]["questions"]) for e in entries], [("Lab/primes", 3, 102)])
         self.assertEqual(sorted(s.split(":")[0] for s in skipped), ["Lab/bad", "Lab/gone"])
+        self.assertEqual(entries[0]["readme"]["text"], "# Motivation\n\nA café.")
+        del files["https://api.github.com/repos/Lab/primes/readme"]
+        entries, skipped = build.from_github(get=get)
+        self.assertEqual(len(entries), 1)
+        self.assertIsNone(entries[0]["readme"])
 
 
 if __name__ == "__main__":

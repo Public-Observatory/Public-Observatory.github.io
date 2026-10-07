@@ -226,7 +226,6 @@ const Observatory = (() => {
       const li = h("li", { class: "q" },
         h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, q.text), chip(q.status)),
         h("div", { class: "q-meta" }, link(q),
-          github && h("a", { href: form("question.yml", { "part-of": `#${q.number}` }) }, "add a subquestion"),
           github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "answer it")),
         (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
           h("div", { class: "answer" }, h("span", { class: "text" }, c.text), h("span", { class: "note" }, c.author, " · ", link(c))))) : null);

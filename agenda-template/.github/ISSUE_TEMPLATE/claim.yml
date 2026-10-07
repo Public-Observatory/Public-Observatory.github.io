@@ -1,26 +1,17 @@
 name: Claim
-description: Record a result, including an approach that did not work.
+description: Record what you found, including an approach that did not work.
 labels: [claim]
 body:
-  - type: textarea
-    id: claim
+  - type: markdown
     attributes:
-      label: Claim
-      description: One statement, precise enough that someone else could check it.
-    validations:
-      required: true
+      value: Write the claim as the title, as one statement precise enough that someone else could check it. Everything below is optional, but a claim with evidence is checked sooner.
   - type: input
     id: answers
     attributes:
       label: Answers
-      description: The numbers of the questions this claim answers, e.g. #3, #7.
-  - type: input
-    id: builds-on
-    attributes:
-      label: Builds on
-      description: The numbers of the claims this one rests on. If any of them fails, this one must be checked again.
+      description: The questions it answers, e.g. #3, #7.
   - type: textarea
     id: evidence
     attributes:
       label: Evidence
-      description: The argument, and links to the code, data or proof, ideally in a pull request to this repository. Give the command that reproduces the claim, if there is one.
+      description: The argument, or a link to the code, data or proof. Give the command that reproduces it, if there is one.

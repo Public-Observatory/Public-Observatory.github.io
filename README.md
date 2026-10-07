@@ -6,7 +6,7 @@ A public index of research agendas: questions, with their motivation and their d
 
 **An agenda is a git repository.** It holds `agenda.json`, which states the agenda's title, kind, root question, summary and maintainers, and a README giving its motivation, scope and standard of evidence. A new agenda is created from the template repository `Public-Observatory/agenda-template`, whose contents are `agenda-template/` here.
 
-**Questions and claims are issues.** Each agenda has two issue forms. A question may name the larger question it helps to settle; a claim names the questions it answers and the claims it builds on, by issue number; an approach that did not work is recorded as a claim too. Code, data and proofs arrive as pull requests that the claim links to.
+**Questions and claims are issues.** Each agenda has two issue forms, and in each the title is the question or the claim; everything else is optional. A question may name the larger question it helps to settle, and a claim the questions it answers, by issue number; an approach that did not work is recorded as a claim too. Code, data and proofs arrive as pull requests that the claim links to.
 
 **Maintainers govern by stated rules.** In an *open agenda* anyone may add subquestions; in a *closed agenda* the maintainers set the questions and accept only answers; a *problem* is a single question. Claims are reviewed in the comments on their issues, and a maintainer closes a question once it is answered.
 

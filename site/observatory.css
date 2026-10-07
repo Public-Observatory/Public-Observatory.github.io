@@ -93,6 +93,23 @@ select { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; b
 .button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .button:hover { text-decoration: none; border-color: var(--accent); }
 
+.readme { margin: 28px 0 32px; padding: 24px clamp(18px, 4vw, 40px) 32px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
+.readme-source { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-bottom: 18px; border-bottom: 1px solid var(--rule); }
+.readme-body { max-width: 76ch; margin: 24px auto 0; font-family: var(--serif); font-size: 1.07rem; line-height: 1.7; overflow-wrap: anywhere; }
+.readme-body h1, .readme-body h2, .readme-body h3 { line-height: 1.3; font-weight: 500; }
+.readme-body h1 { font-size: 1.65rem; margin: 0 0 20px; }
+.readme-body h2 { font-size: 1.35rem; margin-top: 32px; }
+.readme-body h3 { font-size: 1.15rem; }
+.readme-body p { margin: 0 0 18px; }
+.readme-body li { margin: 6px 0; }
+.readme-body img { max-width: 100%; height: auto; }
+.readme-body pre { padding: 16px; background: var(--bg); border-radius: 6px; overflow-x: auto; }
+.readme-body .readme-fallback { white-space: pre-wrap; }
+.readme-body blockquote { margin-left: 0; padding-left: 20px; border-left: 3px solid var(--rule); color: var(--muted); }
+.readme-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.readme-body th, .readme-body td { border: 1px solid var(--rule); padding: 8px 12px; }
+.agenda-activity { padding-bottom: 56px; }
+
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 22px 0 6px; }
 .stat { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
 .stat b { display: block; font-family: var(--serif); font-size: 1.6rem; font-weight: 500; line-height: 1.1; }

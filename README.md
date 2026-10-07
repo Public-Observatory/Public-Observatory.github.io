@@ -33,4 +33,8 @@ python3 site/build.py local _site DIR...                       # index agendas i
 python3 -m http.server -d _site                                # and serve it
 ```
 
-A local agenda directory holds `agenda.json` and, optionally, `issues.json`, a list of issues as the GitHub API returns them. An agenda's check fetches `site/agenda.py` from this repository; the agenda's variable `OBSERVATORY_REPO` points it at another copy.
+A local agenda directory holds `agenda.json` and, optionally, `README.md` and `issues.json`, a list of issues as the GitHub API returns them. The index includes each repository's README, displayed on its agenda page and refreshed with the hourly build. Relative README links and images point back to the source repository. A missing README does not remove the agenda from the index.
+
+README rendering uses vendored Marked 18.1.0 (`site/marked.js`, MIT) and DOMPurify 3.4.16 (`site/purify.js`, Apache-2.0 OR MPL-2.0); their license notices are included in the files.
+
+An agenda's check fetches `site/agenda.py` from this repository; the agenda's variable `OBSERVATORY_REPO` points it at another copy.

@@ -1,0 +1,16 @@
+{
+  "title": "Estimates towards the Riemann hypothesis",
+  "kind": "open-agenda",
+  "question": "Can stronger moment estimates improve the proposed zero-free boundary $7/8$ or prove that at least $68\\%$ of the nontrivial zeta zeros are simple and on the critical line?",
+  "created": "2026-10-07T13:21:03+00:00",
+  "summary": "Two analytic targets replace a broad proof-audit agenda: extend the marked fourth-moment estimate below its stated parameter range and rework the resulting zero-free region; find and prove one-sided higher-moment inequalities sufficient for a 68% proportion of simple critical-line zeros. The recent papers supply starting arguments, with their required inputs explicitly subject to verification.",
+  "maintainers": [
+    "isabeldahlgren"
+  ],
+  "tags": [
+    "number theory",
+    "Riemann hypothesis",
+    "zeta functions",
+    "analytic number theory"
+  ]
+}

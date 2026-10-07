@@ -34,6 +34,18 @@ const Observatory = (() => {
     renderMathInElement(el, { throwOnError: false, trust: false,
       delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false },
                    { left: "\\[", right: "\\]", display: true }, { left: "\\(", right: "\\)", display: false }] });
+    // As in TeX, punctuation after a formula stays on the formula's line.
+    for (const k of el.querySelectorAll(".katex")) {
+      if (k.closest(".katex-display")) continue;
+      let node = k;
+      while (!node.nextSibling && node.parentNode !== el && node.parentNode.childNodes.length === 1) node = node.parentNode;
+      const t = node.nextSibling, m = t && t.nodeType === Node.TEXT_NODE && /^[.,;:!?)\]]+/.exec(t.data);
+      if (!m) continue;
+      t.data = t.data.slice(m[0].length);
+      const span = h("span", { class: "nowrap" });
+      node.replaceWith(span);
+      span.append(node, m[0]);
+    }
   }
 
   async function json(url) {
@@ -219,7 +231,7 @@ const Observatory = (() => {
           github && h("a", { href: form("question.yml", { "part-of": `#${q.number}` }) }, "add a subquestion"),
           github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "answer it")),
         (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
-          h("div", { class: "answer" }, mark(c.status), h("span", {}, c.text), h("span", { class: "note" }, c.author)))) : null);
+          h("div", { class: "answer" }, mark(c.status), h("span", { class: "text" }, c.text), h("span", { class: "note" }, c.author)))) : null);
       const subs = entry.questions.filter((x) => x.parents.includes(q.number));
       if (subs.length) li.append(h("ul", {}, subs.map(node)));
       return li;

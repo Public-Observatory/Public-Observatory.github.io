@@ -67,8 +67,8 @@ def numbers(text: str | None) -> list[int]:
 
 
 def item(issue: dict) -> dict | None:
-    """A question or claim from an issue, or None for any other issue or a pull request. Its text is the
-    issue's title; issues opened through the earlier forms give it in a `Question` or `Claim` field instead."""
+    """A question or claim from an issue, or None for any other issue or a pull request. A question's text
+    is its `Question` field and a claim's is its title; earlier forms used `Claim` and `Part of`."""
     if "pull_request" in issue:
         return None
     labels = sorted(l["name"] if isinstance(l, dict) else l for l in issue.get("labels", []))
@@ -77,7 +77,7 @@ def item(issue: dict) -> dict | None:
             "author": (issue.get("user") or {}).get("login", ""), "created": issue.get("created_at", ""),
             "comments": issue.get("comments", 0), "labels": labels}
     if "question" in labels:
-        return {"type": "question", "text": f.get("Question", issue["title"]), "parents": numbers(f.get("Part of")),
+        return {"type": "question", "text": f.get("Question", issue["title"]), "parents": numbers(f.get("Subquestion of") or f.get("Part of")),
                 "status": "answered" if issue.get("state") == "closed" else "open", **base}
     if "claim" in labels:
         return {"type": "claim", "text": f.get("Claim", issue["title"]), "answers": numbers(f.get("Answers")),

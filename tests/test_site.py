@@ -26,7 +26,8 @@ def issue(number, label, body, state="open", **extra):
 
 ISSUES = [
     issue(1, "question", "### Question\n\nWhat is pi(10^12)?\n\n### Part of\n\n_No response_", state="closed"),
-    issue(2, "question", "### Part of\n\n#1\n\n### Details\n\n_No response_", title="Is LMO faster than a sieve at 10^12?"),
+    issue(2, "question", "### Question\n\nIs LMO faster than a sieve at 10^12?\n\n### Subquestion of\n\n#1\n\n"
+                         "### Motivation\n\n_No response_"),
     issue(3, "claim", "### Claim\n\npi(10^12) = 37607912018.\n\n### Answers\n\n#1\n\n"
                                  "### Evidence\n\nSee #9; run `make check`."),
     issue(4, "claim", "### Claim\n\nTrial division is too slow beyond 10^7.", user={"login": "bob"}),

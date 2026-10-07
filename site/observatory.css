@@ -67,7 +67,7 @@ select { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; b
 .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 18px 18px 14px; display: flex; flex-direction: column; gap: 10px; color: inherit; transition: border-color .15s, transform .15s; }
 .card:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
 .card h2 { font-family: var(--serif); font-weight: 500; font-size: 1.22rem; line-height: 1.25; margin: 0; }
-.card .question { font-family: var(--serif); font-style: italic; color: var(--ink); margin: 0; }
+.card .question { font-family: var(--serif); color: var(--ink); margin: 0; }
 .card .summary { font-family: var(--serif); color: var(--muted); font-size: 0.98rem; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .card .foot { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; color: var(--muted); }
 .badge { display: inline-block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -81,7 +81,7 @@ select { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; b
 /* An agenda */
 .agenda-head { padding: 36px 0 8px; }
 .agenda-head h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(1.7rem, 4vw, 2.3rem); line-height: 1.2; margin: 10px 0 12px; }
-.agenda-head .question { font-family: var(--serif); font-size: 1.2rem; font-style: italic; margin: 0 0 14px; }
+.agenda-head .question { font-family: var(--serif); font-size: 1.2rem; margin: 0 0 14px; }
 .agenda-head .summary { font-family: var(--serif); font-size: 1.04rem; color: var(--muted); max-width: 70ch; margin: 0 0 16px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; }
 .button { display: inline-block; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); font-size: 0.9rem; }

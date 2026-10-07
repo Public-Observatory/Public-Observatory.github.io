@@ -242,8 +242,11 @@ const Observatory = (() => {
     const claimRow = (c) => h("li", {}, h("div", { class: "text" }, c.text),
       h("div", { class: "why" }, c.author, " · ", link(c), c.comments ? ` · ${plural(c.comments, "comment")}` : ""));
 
-    const claims = list("Claims", entry.claims, claimRow,
-      "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
+    // A claim that answers an answered question is shown under that question, and only there.
+    const settled = (c) => c.answers.some((n) => questions[n] && questions[n].status === "answered");
+    const claims = list("Claims", entry.claims.filter((c) => !settled(c)), claimRow, entry.claims.length
+      ? "Every claim answers an answered question and is shown under it."
+      : "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
     const contribute = h("section", {}, h("h2", {}, "How to contribute"),
       h("p", { class: "note" }, "Pose a question or record a claim with the buttons above: state the question or the claim, and everything else is optional. A failed approach is a claim too, so that nobody repeats it. Anyone may check a claim and say in its issue what they did and what happened."));
 

@@ -19,16 +19,16 @@ GOOD = {"title": "Counting primes fast", "kind": "open-agenda",
 
 
 def issue(number, label, body, state="open", **extra):
-    return {"number": number, "title": f"Issue {number}", "labels": [{"name": l} for l in label.split()], "body": body,
+    return {"number": number, "title": extra.pop("title", f"Issue {number}"), "labels": [{"name": l} for l in label.split()], "body": body,
             "state": state, "html_url": f"https://github.com/Lab/primes/issues/{number}", "user": {"login": "alice"},
             "created_at": "2026-10-02T00:00:00Z", "comments": 0, **extra}
 
 
 ISSUES = [
     issue(1, "question", "### Question\n\nWhat is pi(10^12)?\n\n### Part of\n\n_No response_", state="closed"),
-    issue(2, "question", "### Question\n\nIs LMO faster than a sieve at 10^12?\n\n### Part of\n\n#1"),
+    issue(2, "question", "### Part of\n\n#1\n\n### Details\n\n_No response_", title="Is LMO faster than a sieve at 10^12?"),
     issue(3, "claim", "### Claim\n\npi(10^12) = 37607912018.\n\n### Answers\n\n#1\n\n"
-                                 "### Builds on\n\n_No response_\n\n### Evidence\n\nSee #9; run `make check`."),
+                                 "### Evidence\n\nSee #9; run `make check`."),
     issue(4, "claim", "### Claim\n\nTrial division is too slow beyond 10^7.", user={"login": "bob"}),
     issue(5, "claim", "### Claim\n\npi(1000) = 169.\n\n### Answers\n\n"
                               "https://github.com/Lab/primes/issues/1, 2"),
@@ -69,7 +69,7 @@ class IssuesTest(unittest.TestCase):
                          [(1, "What is pi(10^12)?", [], "answered"), (2, "Is LMO faster than a sieve at 10^12?", [1], "open")])
         claims = {c["number"]: c for c in e["claims"]}
         self.assertEqual(sorted(claims), [3, 4, 5])  # not the bug report, not the pull request
-        self.assertEqual((claims[3]["answers"], claims[3]["builds_on"]), ([1], []))
+        self.assertEqual(claims[3]["answers"], [1])
         self.assertIn("make check", claims[3]["evidence"])
         self.assertEqual((claims[4]["answers"], claims[5]["answers"]), ([], [1, 2]))
         self.assertEqual(e["summary"], {"questions": 2, "answered": 1, "claims": 3, "contributors": 2})

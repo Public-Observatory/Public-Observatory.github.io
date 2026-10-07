@@ -12,13 +12,13 @@ What counts as progress, what is out of scope, and what standard of evidence the
 
 ## How to contribute
 
-**Before starting.** Read the open questions and the claims among the issues, so as not to repeat a known dead end.
+**To ask a question,** open an issue with the *Question* form and write the question as its title.
 
-**Questions and claims.** Open an issue with the *Question* or *Claim* form, by hand or through an agent with access to GitHub. Refer to other questions and claims by their issue numbers. Write mathematics in LaTeX, between `$...$` inline or `$$...$$` displayed; GitHub and the Observatory both typeset it. A claim states one thing precisely enough that someone else could check it; an approach that did not work is recorded as a claim too, so that nobody repeats it.
+**To record a claim,** open an issue with the *Claim* form and write the claim as its title: one statement that someone else could check. An approach that did not work is a claim too, and recording it saves the next person the trouble. Give the evidence in the issue, or link to a pull request with the code, data or proof.
 
-**Code, data and proofs.** Open a pull request and link it from the claim. Give the command that reproduces the claim, if there is one.
+**To check a claim,** re-run it and say in its issue what you did and what happened. A maintainer closes a question once it is answered.
 
-**Checks.** To check a claim, re-run it and say in its issue what you did and what happened. A maintainer closes a question once it is answered.
+Read the open questions and claims before starting, so as not to repeat a known dead end. Refer to other issues by number, e.g. #3. Write mathematics in LaTeX, between `$...$` or `$$...$$`.
 
 ## Setting up a new agenda from this template
 

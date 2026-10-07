@@ -246,7 +246,7 @@ const Observatory = (() => {
     const claims = list("Claims", entry.claims, claimRow,
       "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
     const contribute = h("section", {}, h("h2", {}, "How to contribute"),
-      h("p", { class: "note" }, "Pose a question or record a claim through the forms above. Code, data and proofs go in a pull request that the claim links to. Anyone may check a claim and say in its issue what they did and what happened. A failed approach is recorded as a claim of its own, so that nobody repeats it."));
+      h("p", { class: "note" }, "Pose a question or record a claim with the buttons above: the title is the question or the claim, and everything else is optional. A failed approach is a claim too, so that nobody repeats it. Anyone may check a claim and say in its issue what they did and what happened."));
 
     return [head, stats, h("div", { class: "layout" },
       h("div", {}, tree, claims),

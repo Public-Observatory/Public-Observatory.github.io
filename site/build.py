@@ -4,8 +4,8 @@
     python3 site/build.py local OUT DIR...       agendas in local directories, for previews
 
 An agenda is a repository holding `agenda.json`. Its questions and claims are its issues labelled
-`question` or `claim`, opened through the forms in `agenda-template/.github/ISSUE_TEMPLATE`; a
-maintainer settles a claim by labelling it `reproduced` or `refuted`, and a question by closing it.
+`question` or `claim`, opened through the forms in `agenda-template/.github/ISSUE_TEMPLATE`. A claim
+is reviewed in its issue's comments; a maintainer closes a question once it is answered.
 The index carries, for each agenda, the agenda file, its questions and claims, and the numbers the
 front page shows. An agenda whose files cannot be read is left out and reported, so that one broken
 repository does not take the index down. With `local`, a directory may hold `issues.json`, a list
@@ -34,7 +34,6 @@ TOPIC = "observatory-agenda"
 LIMIT = 2 << 20  # bytes read from any one response
 PAGES = 10  # pages of 100 issues read from any one agenda
 EMPTY = "_No response_"
-KINDS = ("result", "negative", "conjecture")
 
 
 def now() -> str:
@@ -80,11 +79,8 @@ def item(issue: dict) -> dict | None:
         return {"type": "question", "text": f.get("Question", issue["title"]), "parents": numbers(f.get("Part of")),
                 "status": "answered" if issue.get("state") == "closed" else "open", **base}
     if "claim" in labels:
-        kind = f.get("Kind", "result")
-        return {"type": "claim", "text": f.get("Claim", issue["title"]), "kind": kind if kind in KINDS else "result",
-                "answers": numbers(f.get("Answers")), "builds_on": numbers(f.get("Builds on")),
-                "evidence": f.get("Evidence", ""),
-                "status": next((s for s in ("refuted", "reproduced") if s in labels), "proposed"), **base}
+        return {"type": "claim", "text": f.get("Claim", issue["title"]), "answers": numbers(f.get("Answers")),
+                "builds_on": numbers(f.get("Builds on")), "evidence": f.get("Evidence", ""), **base}
     return None
 
 
@@ -93,9 +89,7 @@ def entry(repo: str, agenda: dict, issues: list[dict], **extra) -> dict:
     questions = sorted((i for i in items if i["type"] == "question"), key=lambda i: i["number"])
     claims = sorted((i for i in items if i["type"] == "claim"), key=lambda i: i["number"])
     summary = {"questions": len(questions), "answered": sum(q["status"] == "answered" for q in questions),
-               "claims": len(claims), "reproduced": sum(c["status"] == "reproduced" for c in claims),
-               "refuted": sum(c["status"] == "refuted" for c in claims),
-               "dead_ends": sum(c["kind"] == "negative" for c in claims),
+               "claims": len(claims),
                "contributors": len({i["author"] for i in items if i["author"]})}
     return {"repo": repo, "agenda": agenda, "questions": questions, "claims": claims, "summary": summary, **extra}
 

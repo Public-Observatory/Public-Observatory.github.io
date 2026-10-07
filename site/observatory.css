@@ -8,10 +8,6 @@
   --accent-soft: #e8edf7;
   --good: #2e7d4f;
   --good-soft: #e3f2e8;
-  --bad: #b3261e;
-  --bad-soft: #f9e3e1;
-  --warn: #9a6200;
-  --warn-soft: #fbefd8;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -27,10 +23,6 @@
     --accent-soft: #1f2a40;
     --good: #6cc492;
     --good-soft: #17301f;
-    --bad: #f08a80;
-    --bad-soft: #3a1c1a;
-    --warn: #e0b060;
-    --warn-soft: #382a12;
   }
 }
 
@@ -120,9 +112,7 @@ ul.tree ul { margin-left: 18px; padding-left: 12px; border-left: 1px solid var(-
 
 .mark { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 0.75rem; font-weight: 700; margin-top: 2px; }
 .s-open { background: var(--accent-soft); color: var(--accent); }
-.s-proposed { background: var(--warn-soft); color: var(--warn); }
-.s-answered, .s-reproduced { background: var(--good-soft); color: var(--good); }
-.s-refuted { background: var(--bad-soft); color: var(--bad); }
+.s-answered { background: var(--good-soft); color: var(--good); }
 .status { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; padding: 1px 6px; border-radius: 4px; flex: none; }
 
 ol.list, ul.list { margin: 0; padding: 0; list-style: none; }

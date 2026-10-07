@@ -6,9 +6,9 @@ A public index of research agendas: questions, with their motivation and their d
 
 **An agenda is a git repository.** It holds `agenda.json`, which states the agenda's title, kind, root question, summary and maintainers, and a README giving its motivation, scope and standard of evidence. A new agenda is created from the template repository `Public-Observatory/agenda-template`, whose contents are `agenda-template/` here.
 
-**Questions and claims are issues.** Each agenda has two issue forms. A question may name the larger question it helps to settle; a claim names the questions it answers and the claims it builds on, by issue number, and is a `result`, a `negative` result (an approach that did not work) or a `conjecture`. Code, data and proofs arrive as pull requests that the claim links to.
+**Questions and claims are issues.** Each agenda has two issue forms. A question may name the larger question it helps to settle; a claim names the questions it answers and the claims it builds on, by issue number; an approach that did not work is recorded as a claim too. Code, data and proofs arrive as pull requests that the claim links to.
 
-**Maintainers govern by stated rules.** In an *open agenda* anyone may add subquestions; in a *closed agenda* the maintainers set the questions and accept only answers; a *problem* is a single question. A maintainer labels a claim `reproduced` once someone other than its author has checked it, and `refuted` only when the refutation can itself be checked, and closes a question once it is answered.
+**Maintainers govern by stated rules.** In an *open agenda* anyone may add subquestions; in a *closed agenda* the maintainers set the questions and accept only answers; a *problem* is a single question. Claims are reviewed in the comments on their issues, and a maintainer closes a question once it is answered.
 
 **The index is the topic.** Every public repository with the topic `observatory-agenda` is listed, wherever it lives, so that no one controls admission. Every hour, `site/build.py` searches GitHub for the topic, reads each agenda's `agenda.json` and issues, and writes `agendas.json`; the static pages in `site/` render it. An agenda whose files cannot be read is left out and reported.
 

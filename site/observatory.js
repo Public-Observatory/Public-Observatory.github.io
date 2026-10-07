@@ -5,7 +5,7 @@
 "use strict";
 
 const Observatory = (() => {
-  const MARK = { open: "○", proposed: "?", answered: "✓", reproduced: "✓", refuted: "✗" };
+  const MARK = { open: "○", answered: "✓" };
   const KIND = { "open-agenda": "Open agenda", "closed-agenda": "Closed agenda", problem: "Problem" };
 
   function h(tag, attrs, ...children) {
@@ -140,8 +140,7 @@ const Observatory = (() => {
           h("span", { style: `width:${pct}%` })),
         h("div", { class: "foot" },
           h("span", {}, `${s.answered}/${s.questions} questions answered`),
-          h("span", {}, plural(s.reproduced, "claim") + " reproduced"),
-          h("span", {}, plural(s.dead_ends, "dead end")),
+          h("span", {}, plural(s.claims, "claim")),
           h("span", {}, plural(s.contributors, "contributor"))));
     }
 
@@ -215,8 +214,7 @@ const Observatory = (() => {
         github && h("a", { class: "button", href: github }, "Repository")));
 
     const stats = h("div", { class: "stats" },
-      [[`${s.answered}/${s.questions}`, "questions answered"], [s.claims, "claims"], [s.reproduced, "reproduced"],
-       [s.refuted, "refuted"], [s.dead_ends, "dead ends recorded"], [s.contributors, "contributors"]]
+      [[`${s.answered}/${s.questions}`, "questions answered"], [s.claims, "claims"], [s.contributors, "contributors"]]
         .map(([n, label]) => h("div", { class: "stat" }, h("b", {}, n), h("span", {}, label))));
 
     // The tree of questions: a question whose parents are not in the agenda is a root.
@@ -231,7 +229,7 @@ const Observatory = (() => {
           github && h("a", { href: form("question.yml", { "part-of": `#${q.number}` }) }, "add a subquestion"),
           github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "answer it")),
         (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
-          h("div", { class: "answer" }, mark(c.status), h("span", { class: "text" }, c.text), h("span", { class: "note" }, c.author)))) : null);
+          h("div", { class: "answer" }, h("span", { class: "text" }, c.text), h("span", { class: "note" }, c.author, " · ", link(c))))) : null);
       const subs = entry.questions.filter((x) => x.parents.includes(q.number));
       if (subs.length) li.append(h("ul", {}, subs.map(node)));
       return li;
@@ -245,18 +243,13 @@ const Observatory = (() => {
     const claimRow = (c) => h("li", {}, h("div", { class: "text" }, c.text),
       h("div", { class: "why" }, c.author, " · ", link(c), c.comments ? ` · ${plural(c.comments, "comment")}` : ""));
 
-    const reproduced = list("Reproduced", entry.claims.filter((c) => c.status === "reproduced"), claimRow,
-      "Nothing has been reproduced yet.");
-    const pending = list("Awaiting a check", entry.claims.filter((c) => c.status === "proposed" && c.kind !== "negative"),
-      claimRow, "Nothing awaits a check.");
-    const refuted = list("Refuted", entry.claims.filter((c) => c.status === "refuted"), claimRow, "Nothing refuted.");
-    const dead = list("Dead ends", entry.claims.filter((c) => c.kind === "negative"), claimRow,
-      "No dead ends recorded. Recording one saves the next person the trouble.");
+    const claims = list("Claims", entry.claims, claimRow,
+      "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
     const contribute = h("section", {}, h("h2", {}, "How to contribute"),
-      h("p", { class: "note" }, "Pose a question or record a claim through the forms above. Code, data and proofs go in a pull request that the claim links to. A maintainer labels a claim reproduced once someone other than its author has checked it, and refuted only when the refutation itself can be checked."));
+      h("p", { class: "note" }, "Pose a question or record a claim through the forms above. Code, data and proofs go in a pull request that the claim links to. Anyone may check a claim and say in its issue what they did and what happened. A failed approach is recorded as a claim of its own, so that nobody repeats it."));
 
     return [head, stats, h("div", { class: "layout" },
-      h("div", {}, tree, reproduced, pending, refuted, dead),
+      h("div", {}, tree, claims),
       h("aside", {}, contribute))];
   }
 

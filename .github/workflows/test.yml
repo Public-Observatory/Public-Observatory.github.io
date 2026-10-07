@@ -4,20 +4,11 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
         python: ["3.10", "3.13"]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Sandbox for `ev verify` on Linux
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - run: python -m unittest discover -s tests -v
-        env:
-          EV_SEEDS: "20"
-      - run: sh demo/run.sh

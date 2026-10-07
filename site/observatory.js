@@ -1,14 +1,11 @@
-// The Observatory's pages. Everything shown comes from agendas.json and each agenda's snapshot.json,
-// both written by `evidence`; nothing is computed here that the record does not already say. Text
-// from the record is untrusted, so it is only ever inserted as text, never as HTML.
+// The Observatory's pages. Everything shown comes from agendas.json, written by build.py from each
+// agenda's agenda.json and its issues. Text from issues is untrusted, so it is only ever inserted as
+// text, never as HTML.
 "use strict";
 
 const Observatory = (() => {
-  const MARK = { open: "○", proposed: "?", answered: "✓", contested: "≠", reproduced: "✓", refuted: "✗",
-                 superseded: "→", "at-risk": "!" };
+  const MARK = { open: "○", proposed: "?", answered: "✓", reproduced: "✓", refuted: "✗" };
   const KIND = { "open-agenda": "Open agenda", "closed-agenda": "Closed agenda", problem: "Problem" };
-  const ACTION = { resolve: "Resolve", recheck: "Re-check", adjudicate: "Adjudicate", selfcheck: "Self-check",
-                   reproduce: "Reproduce", review: "Review", prove: "Prove", answer: "Answer" };
 
   function h(tag, attrs, ...children) {
     const el = document.createElement(tag);
@@ -25,36 +22,15 @@ const Observatory = (() => {
     return el;
   }
 
-  const short = (id) => id.slice(0, 10);
   const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + "s"}`;
-  const who = (a) => ["lab", "model", "agent"].map((k) => a && a[k]).filter(Boolean).join(" / ") || "anonymous";
   const mark = (state) => h("span", { class: `mark s-${state}`, title: state }, MARK[state] || "·");
   const chip = (state) => h("span", { class: `status s-${state}` }, state);
+  const safe = (url) => (/^https:\/\//.test(url || "") ? url : null);
 
   async function json(url) {
     const r = await fetch(url, { cache: "no-cache" });
     if (!r.ok) throw new Error(`${url}: ${r.status}`);
     return r.json();
-  }
-
-  function since(at, then) {
-    const mins = Math.round((Date.parse(then) - Date.parse(at)) / 60000);
-    if (Math.abs(mins) < 60) return `${Math.abs(mins)} min`;
-    const hours = Math.round(Math.abs(mins) / 60);
-    return hours < 48 ? `${hours} h` : `${Math.round(hours / 24)} days`;
-  }
-
-  function toast(text) {
-    const t = document.getElementById("toast");
-    if (!t) return;
-    t.textContent = text;
-    t.classList.add("on");
-    clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => t.classList.remove("on"), 1600);
-  }
-
-  function copy(id) {
-    navigator.clipboard?.writeText(id).then(() => toast(`Copied ${short(id)}`), () => toast(id));
   }
 
   // ------------------------------------------------------------------ the index
@@ -72,9 +48,10 @@ const Observatory = (() => {
     }
     const state = { q: "", kind: "", sort: "active" };
     const progress = (s) => (s.questions ? s.answered / s.questions : 0);
+    const open = (s) => s.questions - s.answered;
     const order = {
-      active: (a, b) => b.summary.leases - a.summary.leases || b.summary.contributors - a.summary.contributors,
-      open: (a, b) => b.summary.todo - a.summary.todo,
+      active: (a, b) => (b.pushed || "").localeCompare(a.pushed || "") || b.summary.contributors - a.summary.contributors,
+      open: (a, b) => open(b.summary) - open(a.summary),
       new: (a, b) => b.agenda.created.localeCompare(a.agenda.created),
       progress: (a, b) => progress(b.summary) - progress(a.summary),
     };
@@ -91,10 +68,9 @@ const Observatory = (() => {
           h("span", { style: `width:${pct}%` })),
         h("div", { class: "foot" },
           h("span", {}, `${s.answered}/${s.questions} questions answered`),
-          h("span", {}, plural(s.reproduced, "result") + " reproduced"),
-          h("span", {}, plural(s.todo, "thing", "things") + " to do"),
-          s.leases ? h("span", { class: "live" }, `${s.leases} working now`) : null,
-          s.contested ? h("span", {}, plural(s.contested, "contested question")) : null));
+          h("span", {}, plural(s.reproduced, "claim") + " reproduced"),
+          h("span", {}, plural(s.dead_ends, "dead end")),
+          h("span", {}, plural(s.contributors, "contributor"))));
     }
 
     function render() {
@@ -129,37 +105,28 @@ const Observatory = (() => {
   async function agenda() {
     const main = document.getElementById("main");
     const repo = new URLSearchParams(location.search).get("repo") || "";
-    let entry, snap;
+    let data, entry;
     try {
-      const idx = await json("agendas.json").catch(() => ({ agendas: [] }));
-      entry = idx.agendas.find((e) => e.repo === repo);
-      if (!entry && /^[\w.-]+\/[\w.-]+$/.test(repo)) {
-        const [owner, name] = repo.split("/");
-        const pages = `https://${owner.toLowerCase()}.github.io/${name}/`;
-        entry = { repo, agenda: await json(pages + "agenda.json"), snapshot: pages + "snapshot.json" };
-      }
-      if (!entry) throw new Error("no such agenda");
-      snap = await json(entry.snapshot);
+      data = await json("agendas.json");
+      entry = data.agendas.find((e) => e.repo === repo);
+      if (!entry) throw new Error("no such agenda in the index");
     } catch (e) {
       main.replaceChildren(h("p", { class: "empty" }, `This agenda could not be loaded (${e.message}).`));
       return;
     }
     document.title = `${entry.agenda.title} · Public Observatory`;
-    main.replaceChildren(...render(entry, snap));
-    document.getElementById("built").append(`Record as of ${snap.at.slice(0, 16).replace("T", " ")} UTC.`);
+    main.replaceChildren(...render(entry));
+    if (data.built) document.getElementById("built").append(`As of ${data.built.slice(0, 16).replace("T", " ")} UTC.`);
   }
 
-  function render(entry, snap) {
-    const a = entry.agenda;
-    const github = entry.repo.startsWith("local/") ? null : entry.url || `https://github.com/${entry.repo}`;
-    const form = (template, fields) => github &&
-      `${github}/issues/new?${new URLSearchParams({ template, ...fields })}`;
-    const claims = Object.fromEntries(snap.claims.map((c) => [c.id, c]));
-    const questions = Object.fromEntries(snap.questions.map((q) => [q.id, q]));
-    const leased = {};
-    for (const l of snap.leases) (leased[l.target] ||= []).push(l);
-    const c = snap.counts;
-    const root = snap.questions.find((q) => q.text === a.question && !q.parents.some((p) => questions[p]));
+  function render(entry) {
+    const a = entry.agenda, s = entry.summary;
+    const github = entry.repo.startsWith("local/") ? null : safe(entry.url) || `https://github.com/${entry.repo}`;
+    const form = (template, fields) => github && `${github}/issues/new?${new URLSearchParams({ template, ...fields })}`;
+    const questions = Object.fromEntries(entry.questions.map((q) => [q.number, q]));
+    const answers = {};
+    for (const c of entry.claims) for (const n of c.answers) (answers[n] ||= []).push(c);
+    const link = (i) => safe(i.url) ? h("a", { href: i.url }, `#${i.number}`) : `#${i.number}`;
 
     const head = h("div", { class: "agenda-head" },
       h("span", { class: "badge" }, KIND[a.kind] || a.kind),
@@ -169,77 +136,54 @@ const Observatory = (() => {
       h("div", { class: "note" }, "Maintained by ", a.maintainers.map((m, i) => [i ? ", " : "",
         github ? h("a", { href: `https://github.com/${m}` }, m) : m])),
       h("div", { class: "actions" },
-        github && h("a", { class: "button primary", href: form("question.yml", root ? { parent: root.id } : {}) },
-          "Pose a question"),
+        github && h("a", { class: "button primary", href: form("question.yml", {}) }, "Pose a question"),
         github && h("a", { class: "button", href: form("claim.yml", {}) }, "Record a claim"),
-        h("a", { class: "button", href: "#agents" }, "Work on it with an agent"),
         github && h("a", { class: "button", href: github }, "Repository")));
 
     const stats = h("div", { class: "stats" },
-      [[`${c.answered}/${c.questions}`, "questions answered"], [c.reproduced, "claims reproduced"],
-       [c.proposed, "claims awaiting a check"], [c.refuted, "refuted"],
-       [snap.claims.filter((x) => x.kind === "negative").length, "dead ends recorded"],
-       [snap.leases.length, "pieces of work under way"]]
+      [[`${s.answered}/${s.questions}`, "questions answered"], [s.claims, "claims"], [s.reproduced, "reproduced"],
+       [s.refuted, "refuted"], [s.dead_ends, "dead ends recorded"], [s.contributors, "contributors"]]
         .map(([n, label]) => h("div", { class: "stat" }, h("b", {}, n), h("span", {}, label))));
 
-    // The tree of questions, the agenda's root first.
-    const roots = snap.questions.filter((q) => !q.parents.some((p) => questions[p]));
-    roots.sort((x, y) => (y === root) - (x === root));
+    // The tree of questions: a question whose parents are not in the agenda is a root.
+    const roots = entry.questions.filter((q) => !q.parents.some((p) => questions[p]));
     const seen = new Set();
     function node(q) {
-      if (seen.has(q.id)) return h("li", { class: "q note" }, `(see ${short(q.id)} above)`);
-      seen.add(q.id);
-      const working = leased[q.id] || [];
-      const li = h("li", { class: "q", id: `q-${q.id}` },
+      if (seen.has(q.number)) return h("li", { class: "q note" }, `(see #${q.number} above)`);
+      seen.add(q.number);
+      const li = h("li", { class: "q" },
         h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, q.text), chip(q.status)),
-        h("div", { class: "q-meta" },
-          h("button", { onclick: () => copy(q.id), title: "Copy the full id" }, short(q.id)),
-          github && h("a", { href: form("question.yml", { parent: q.id }) }, "add a subquestion"),
-          github && h("a", { href: form("claim.yml", { answers: q.id }) }, "answer it"),
-          working.length ? h("span", { class: "live" }, `${working.length} working on it`) : null),
-        q.answers.length ? h("div", { class: "answers" }, q.answers.map((id) => claims[id]).filter(Boolean).map((cl) =>
-          h("div", { class: "answer" }, mark(cl.status), h("span", {}, cl.statement), h("span", { class: "note" }, who(cl.author))))) : null);
-      const subs = q.subquestions.map((s) => questions[s]).filter(Boolean);
+        h("div", { class: "q-meta" }, link(q),
+          github && h("a", { href: form("question.yml", { "part-of": `#${q.number}` }) }, "add a subquestion"),
+          github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "answer it")),
+        (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
+          h("div", { class: "answer" }, mark(c.status), h("span", {}, c.text), h("span", { class: "note" }, c.author)))) : null);
+      const subs = entry.questions.filter((x) => x.parents.includes(q.number));
       if (subs.length) li.append(h("ul", {}, subs.map(node)));
       return li;
     }
-    const tree = h("section", {}, h("h2", {}, "Questions", h("small", {}, plural(c.questions, "question"))),
+    const tree = h("section", {}, h("h2", {}, "Questions", h("small", {}, plural(s.questions, "question"))),
       roots.length ? h("ul", { class: "tree" }, roots.map(node))
-                   : h("p", { class: "note" }, "No questions yet: the root question appears once the agenda is published."));
+                   : h("p", { class: "note" }, "No questions yet. Pose the first subquestion."));
 
     const list = (title, items, row, none) => h("section", {}, h("h2", {}, title),
       items.length ? h("ul", { class: "list" }, items.map(row)) : h("p", { class: "note" }, none));
-    const claimRow = (cl) => h("li", {}, h("div", { class: "text" }, cl.statement),
-      h("div", { class: "why" }, `${who(cl.author)} · ${short(cl.id)}`));
+    const claimRow = (c) => h("li", {}, h("div", { class: "text" }, c.text),
+      h("div", { class: "why" }, c.author, " · ", link(c), c.comments ? ` · ${plural(c.comments, "comment")}` : ""));
 
-    const results = list("Principal results", snap.digest, (d) => h("li", {}, h("div", { class: "text" }, d.statement),
-      h("div", { class: "why" }, `reproduced by ${plural(d.independent, "other lab")} · ${plural(d.dependents, "claim builds", "claims build")} on it`)),
-      "Nothing has been reproduced by a second laboratory yet.");
-    const refuted = list("Refuted", snap.claims.filter((x) => x.status === "refuted"), claimRow, "Nothing refuted.");
-    const dead = list("Dead ends", snap.claims.filter((x) => x.kind === "negative"), claimRow,
+    const reproduced = list("Reproduced", entry.claims.filter((c) => c.status === "reproduced"), claimRow,
+      "Nothing has been reproduced yet.");
+    const pending = list("Awaiting a check", entry.claims.filter((c) => c.status === "proposed" && c.kind !== "negative"),
+      claimRow, "Nothing awaits a check.");
+    const refuted = list("Refuted", entry.claims.filter((c) => c.status === "refuted"), claimRow, "Nothing refuted.");
+    const dead = list("Dead ends", entry.claims.filter((c) => c.kind === "negative"), claimRow,
       "No dead ends recorded. Recording one saves the next person the trouble.");
-    const conj = snap.claims.filter((x) => x.kind === "conjecture" && x.status === "proposed");
-
-    const now = list("Working on it now", snap.leases, (l) => {
-      const target = questions[l.target]?.text || claims[l.target]?.statement || short(l.target);
-      return h("li", {}, h("div", { class: "who" }, who(l.by)),
-        h("div", { class: "text" }, target), h("div", { class: "why" },
-          (l.note ? `${l.note} · ` : "") + `for another ${since(snap.at, l.until)}`));
-    }, "Nobody has announced work in progress.");
-    const todo = list("Worth doing next", snap.todo.slice(0, 8), (t) => h("li", {},
-      h("div", { class: "what" }, `${ACTION[t.action] || t.action} · impact ${t.impact}`),
-      h("div", { class: "text" }, t.statement), h("div", { class: "why" }, t.why)), "Nothing to do.");
-    const people = list("Contributors", snap.contributors, (p) => h("li", { class: "who" }, who(p.author), " ",
-      h("span", { class: "n" }, [p.questions && plural(p.questions, "question"), p.claims && plural(p.claims, "claim"),
-        p.reviews && plural(p.reviews, "review")].filter(Boolean).join(", "))), "Nobody yet.");
-    const clone = github ? `git clone ${github}.git` : "git clone <this agenda>";
-    const agents = h("section", { id: "agents" }, h("h2", {}, "With an agent"),
-      h("pre", { class: "snippet" }, `${clone}\ncd ${entry.repo.split("/")[1]}\nev guide   # what the agent should read first\nev todo    # what is worth doing\nev mcp     # or connect it over MCP`),
-      h("p", { class: "note" }, "Record what you find, dead ends included, and open a pull request. It may only add files under .evidence/."));
+    const contribute = h("section", {}, h("h2", {}, "How to contribute"),
+      h("p", { class: "note" }, "Pose a question or record a claim through the forms above. Code, data and proofs go in a pull request that the claim links to. A maintainer labels a claim reproduced once someone other than its author has checked it, and refuted only when the refutation itself can be checked."));
 
     return [head, stats, h("div", { class: "layout" },
-      h("div", {}, tree, results, conj.length ? list("Open conjectures", conj, claimRow, "") : null, refuted, dead),
-      h("aside", {}, now, todo, agents, people))];
+      h("div", {}, tree, reproduced, pending, refuted, dead),
+      h("aside", {}, contribute))];
   }
 
   return { index, agenda };

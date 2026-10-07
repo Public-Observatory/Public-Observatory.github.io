@@ -26,8 +26,8 @@
       <button class="chip" data-kind="problem" aria-pressed="false">Problems</button>
     </div>
     <select id="sort" aria-label="Sort">
-      <option value="active">Most active</option>
-      <option value="open">Most to do</option>
+      <option value="active">Recently active</option>
+      <option value="open">Most open questions</option>
       <option value="new">Newest</option>
       <option value="progress">Furthest along</option>
     </select>
@@ -36,11 +36,11 @@
   <p class="empty" id="empty" hidden></p>
   <section id="about">
     <h2>How it works</h2>
-    <p>Each agenda is a git repository holding a record of questions, claims, and reviews of those claims. Every object is immutable, named by its hash and signed by its author, so records merge without conflicts and a contribution is a pull request that only adds files. A claim's status follows from the evidence on record: it is reproduced when someone other than its author re-runs it, refuted only by evidence, and flagged when anything it rests on falls.</p>
-    <p>To pose an agenda, create a repository from the <a href="https://github.com/Public-Observatory/agenda-template">template</a> and give it the topic <code>observatory-agenda</code>. To work on one with an agent, clone it and run <code>ev guide</code>. To contribute by hand, use the forms on the agenda's page.</p>
+    <p>Each agenda is a git repository on GitHub. Its file <code>agenda.json</code> states the root question; its questions and claims are issues opened through two forms; code, data and proofs arrive as pull requests. Maintainers label a claim reproduced once someone other than its author has checked it, and refuted only when the refutation can itself be checked. Failed approaches are recorded as claims of their own, so that nobody repeats them.</p>
+    <p>To pose an agenda, create a repository from the <a href="https://github.com/Public-Observatory/agenda-template">template</a> and give it the topic <code>observatory-agenda</code>. To contribute, use the forms on the agenda's page, by hand or through an agent with access to GitHub.</p>
   </section>
 </main>
-<footer class="site"><div class="wrap" id="built">Built on <a href="https://github.com/Public-Observatory/observatory">evidence</a>, version control for science.</div></footer>
+<footer class="site"><div class="wrap" id="built"><a href="https://github.com/Public-Observatory/observatory">Source</a>.</div></footer>
 <script src="observatory.js"></script>
 <script>Observatory.index();</script>
 </body>

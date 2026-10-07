@@ -17,23 +17,18 @@ body:
       description: A negative claim records an approach that did not work, so that nobody repeats it.
     validations:
       required: true
-  - type: textarea
+  - type: input
     id: answers
     attributes:
       label: Answers
-      description: Ids of the questions this claim answers.
-  - type: textarea
-    id: depends
+      description: The numbers of the questions this claim answers, e.g. #3, #7.
+  - type: input
+    id: builds-on
     attributes:
       label: Builds on
-      description: Ids of the claims this one rests on. If any of them falls, this claim is flagged.
-  - type: input
-    id: value
-    attributes:
-      label: Value
-      description: The answer as a value, if it is one, e.g. 168, true, or 9.81 m/s^2 ± 0.02.
+      description: The numbers of the claims this one rests on. If any of them is refuted, this one must be checked again.
   - type: textarea
     id: evidence
     attributes:
       label: Evidence
-      description: The argument, or links to code, data or a proof. A claim with a command that others can re-run is better recorded by an agent through a pull request.
+      description: The argument, and links to the code, data or proof, ideally in a pull request to this repository. Give the command that reproduces the claim, if there is one.

@@ -9,8 +9,8 @@ body:
       description: One question, stated so that one could tell when it has been answered.
     validations:
       required: true
-  - type: textarea
-    id: parent
+  - type: input
+    id: part-of
     attributes:
       label: Part of
-      description: The id (or its first ten characters) of the larger question this helps to settle. Leave empty for the agenda's root question.
+      description: The number of the larger question this helps to settle, e.g. #12. Leave empty if it bears directly on the agenda's root question.

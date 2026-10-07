@@ -5,7 +5,7 @@ name: site
 on:
   push:
     branches: [main]
-    paths: [site/**, contrib/agenda.py]
+    paths: [site/**]
   schedule:
     - cron: "41 * * * *"
   workflow_dispatch:

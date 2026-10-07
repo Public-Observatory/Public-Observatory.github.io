@@ -2,16 +2,20 @@ name: Question
 description: Ask something that would help settle this agenda.
 labels: [question]
 body:
-  - type: markdown
+  - type: textarea
+    id: question
     attributes:
-      value: Write the question as the title, precisely enough that one could tell when it has been answered. Everything below is optional.
+      label: Question
+      description: One question, precise enough that one could tell when it has been answered. Give it a short title too.
+    validations:
+      required: true
   - type: input
     id: part-of
     attributes:
-      label: Part of
-      description: The larger question this one helps to settle, e.g. #12. Leave it empty if it bears on the agenda's root question.
+      label: Subquestion of
+      description: Optional. The question this one helps to answer, e.g. #12. Leave it empty if it bears on the agenda's root question.
   - type: textarea
-    id: details
+    id: motivation
     attributes:
-      label: Details
-      description: Why it matters, what is known, and where the difficulty lies.
+      label: Motivation
+      description: Optional. Why it matters, what is known, and where the difficulty lies.

@@ -1,0 +1,20 @@
+[
+  {
+    "number": 5,
+    "title": "Can the marked fourth moment reach below seven eighths?",
+    "state": "open",
+    "labels": [
+      "question"
+    ],
+    "body": "### Question\n\n**Does the estimate in Lemma 18.1 of the [September 2026 preprint](https://github.com/openai/math/blob/adc7f1241b42e322a6451854ab7e4b4c146bf78a/preprints/The-Quasi-Riemann-Hypothesis-September-30-2026/paper.pdf) extend to some interval $\\kappa_0\\leq\\kappa\\leq1$ with $\\kappa_0<3/4$, and can that extension yield a zero-free half-plane $\\operatorname{Re}s>\\theta$ with $\\theta<7/8$?**\n\nUse that pinned version's definitions of the row characters, masks, smooth polynomials, and prime factors. For positive total prime length $z$, its stated admissibility condition is\n\n$$n_1+n_2+6\\kappa z\\leq M,$$\n\nunder the additional hypothesis $\\beta^*\\leq(1+\\kappa)/2$ when $\\kappa<1$; here $\\beta^*$ is the supremum of the real parts of nontrivial zeros in the preprint's primitive finite-order Hecke family over $\\mathbb Q(\\sqrt{-3})$. The theorem is stated for $3/4\\leq\\kappa\\leq1$. Its use of $\\kappa=2\\beta^*-1$ explains why extending this range is a concrete target for moving below $7/8$.\n\nThe first milestone is to identify whether $3/4$ is essential to the moment argument. Prove an extension, or isolate the exact estimate that prevents one. A counterexample must obey the row, coefficient, and mask hypotheses. An extension alone does not imply a new zero-free region: the continuation argument, prime supply, row counts, and contour ranges must also be established at the new boundary.\n\nThis is conditional research until the required inputs have been checked. The existing [first-stage verification](https://github.com/Public-Observatory/riemann-hypothesis/issues/1) and [parameter checks](https://github.com/Public-Observatory/riemann-hypothesis/issues/4) remain supporting tasks; neither is recorded here as completed. A numerical optimum using the old hypotheses outside their stated ranges is not progress on this question.\n"
+  },
+  {
+    "number": 9,
+    "title": "Can one-sided higher-moment estimates establish 68%?",
+    "state": "open",
+    "labels": [
+      "question"
+    ],
+    "body": "### Question\n\nLet $N(T,2T)$ count nontrivial zeros with $T<\\operatorname{Im}\\rho\\leq2T$, with multiplicity, and let $N_0^{\\mathrm s}(T,2T)$ count the simple zeros in that range on the critical line. **Can one prove**\n\n$$\\liminf_{T\\to\\infty}\\frac{N_0^{\\mathrm s}(T,2T)}{N(T,2T)}\\geq0.68$$\n\n**using inequalities for the third and fourth trace moments of finite restrictions of Weil's form, rather than full higher-moment asymptotics?**\n\nUse the matrix $\\widetilde G_T$ and normalization in [the August 2026 paper](https://www-cdn.anthropic.com/95c246936988e43127bc6b2ceb7077c1dad2d68e.pdf). Its reported bound is $0.67250\\ldots$. Section 7.2 already discusses stronger conclusions conditional on higher moments. Merely recovering those conditional conclusions would not answer this question.\n\nA useful first result would specify explicit inequalities on $d_T^{-1}\\operatorname{tr}(\\widetilde G_T^j)$, $j=3,4$, where $d_T$ is the matrix dimension, sufficient for the target when combined with the stated first two moments and zero-block information. Prove the implication with a positive allowance for errors. Then identify the weighted prime-correlation estimate needed for those inequalities. The point is to find a weaker analytic target than evaluating every higher moment asymptotically; the full question requires proving that target unconditionally.\n\nAn obstruction is valuable too: exhibit an admissible family of Hermitian matrices and zero blocks showing that a specified proposed set of moment inequalities cannot suffice. Positive eigenvalues alone do not count simple zeros, and a proportion of one would still allow a sparse set of off-line zeros.\n"
+  }
+]

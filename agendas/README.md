@@ -1,14 +1,4 @@
-# Research agendas
-
-## Safe cooperation in open-source game theory
-
-[The new agenda](open-source-game-theory/README.md) studies safe cooperation among agents that inspect one another’s programs. It includes five proposed questions, a first-year plan, and 24 annotated references, with explicit attribution to AI-Safety for Mathematicians and Lionel Levine. Its `agenda.json` and `issues.json` support local previews; the questions have not been posted as GitHub issues.
-
-```sh
-python3 site/build.py local /tmp/observatory-game-theory-preview agendas/open-source-game-theory
-```
-
-## Revisions of the existing agendas
+# Revised research agendas
 
 Local revisions of the two agendas indexed by the Observatory, prepared on 7 October 2026. The live repositories and issues have not been changed. Each directory contains a proposed `agenda.json`, a README, and the main questions in the `issues.json` format accepted by `site/build.py local`.
 

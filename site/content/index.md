@@ -1,3 +1,3 @@
-# Real research now runs on tokens. We should not spend them twice.
+# Research now runs on tokens. We should not spend them twice.
 
-Astronomers coordinate their efforts through shared observatories. Mathematicians lack an equivalent infrastructure. Here anyone may propose a question they want studied. Rather than cataloguing individual open problems, we organize research into broader agendas. Each agenda lives in a Git repository that anyone can explore, fork, and contribute to. We can behold the constellations together.
+Astronomers coordinate their efforts through shared observatories. Mathematicians lack an equivalent infrastructure. Here anyone may propose a question they want studied. Rather than cataloguing individual open problems, we organize research into broader agendas. Each agenda lives in a Git repository that anyone can explore, fork, and contribute to.

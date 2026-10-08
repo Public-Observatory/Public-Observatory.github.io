@@ -10,10 +10,6 @@ AI promises to democratise research, allowing anyone to contribute to our collec
 
 The Public Observatory is a place where people can propose what to study. Like an observatory, it brings many observers to one instrument, with a common record of what was seen.
 
-## Why agendas, not problems
-
-A list of open problems shows each problem in isolation, like a star. An agenda is like a constellation, showing how each star fits into a larger whole.
-
 ## How it works
 
 Each agenda lives in a GitHub repository. Questions and claims are issues, where contributors discuss and review them; code, data and proofs arrive as pull requests. A contribution may be a proof, an experiment, a sharper question, or a check of someone else's claim. Maintainers state the agenda's scope and standards of evidence, and close questions when they are answered.

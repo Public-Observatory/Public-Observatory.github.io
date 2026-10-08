@@ -1,5 +1,5 @@
-// The Observatory's pages. Everything shown comes from agendas.json, written by build.py from each
-// agenda's agenda.json, README and issues. README HTML is sanitized with DOMPurify.
+// The Observatory's pages. Agenda data comes from agendas.json, written by build.py.
+// Page copy comes from content/*.md. Markdown HTML is sanitized with DOMPurify.
 // Text from issues is untrusted, so it is only ever inserted as
 // text, never as HTML. Mathematics in it, written as LaTeX between $...$ or $$...$$, is then typeset by
 // KaTeX, which builds its own markup from the text and, with `trust` off, follows no links.
@@ -121,6 +121,59 @@ const Observatory = (() => {
     select.after(wrap);
   }
 
+  // Shared by page copy and repository READMEs.
+  function markdown(text) {
+    // Keep LaTeX intact through Markdown parsing; KaTeX runs on the sanitized DOM.
+    const parser = new marked.Marked({ extensions: [{
+      name: "math", level: "inline",
+      start: (src) => src.search(/\$|\\[([]/),
+      tokenizer(src) {
+        const match = /^(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/.exec(src);
+        if (match) return { type: "math", raw: match[0] };
+      },
+      renderer: (token) => h("span", {}, token.raw).outerHTML,
+    }] });
+    return DOMPurify.sanitize(parser.parse(text), {
+      RETURN_DOM_FRAGMENT: true, USE_PROFILES: { html: true },
+      FORBID_TAGS: ["style", "form", "input", "button"],
+      FORBID_ATTR: ["style", "srcset"],
+    });
+  }
+
+  async function page(url) {
+    const body = document.getElementById("page-content");
+    try {
+      const response = await fetch(url, { cache: "no-cache" });
+      if (!response.ok) throw new Error(`${url}: ${response.status}`);
+      const text = await response.text();
+      if (!window.marked || !window.DOMPurify) {
+        body.replaceChildren(h("pre", { class: "page-fallback" }, text));
+        return;
+      }
+      const content = markdown(text);
+      if (body.classList.contains("about-page")) {
+        // The introduction is the hero; each level-two heading starts a section.
+        let group = h("header", { class: "hero" });
+        const groups = [group];
+        for (const node of [...content.childNodes]) {
+          if (node.nodeName === "H2") {
+            group = h("section", {});
+            groups.push(group);
+          }
+          group.append(node);
+        }
+        body.replaceChildren(...groups);
+      } else {
+        body.replaceChildren(content);
+      }
+      typeset(body);
+    } catch (error) {
+      body.replaceChildren(h("p", {}, "This text could not be loaded. ",
+        h("a", { href: url }, "Read the Markdown source"), "."));
+      console.error(error);
+    }
+  }
+
   // ------------------------------------------------------------------ the index
 
   async function index() {
@@ -204,21 +257,7 @@ const Observatory = (() => {
     if (!window.marked || !window.DOMPurify) {
       body.append(h("pre", { class: "readme-fallback" }, readme.text));
     } else {
-      // Keep LaTeX intact through Markdown parsing; KaTeX runs on the sanitized DOM.
-      const parser = new marked.Marked({ extensions: [{
-        name: "math", level: "inline",
-        start: (src) => src.search(/\$|\\[([]/),
-        tokenizer(src) {
-          const match = /^(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/.exec(src);
-          if (match) return { type: "math", raw: match[0] };
-        },
-        renderer: (token) => h("span", {}, token.raw).outerHTML,
-      }] });
-      body.append(DOMPurify.sanitize(parser.parse(readme.text), {
-        RETURN_DOM_FRAGMENT: true, USE_PROFILES: { html: true },
-        FORBID_TAGS: ["style", "form", "input", "button"],
-        FORBID_ATTR: ["style", "srcset"],
-      }));
+      body.append(markdown(readme.text));
       // Resolve repository-relative links and images against the actual README location.
       for (const el of body.querySelectorAll("a[href], img[src]")) {
         const attr = el.tagName === "IMG" ? "src" : "href";
@@ -314,5 +353,5 @@ const Observatory = (() => {
       h("div", { class: "agenda-activity" }, tree, claims)];
   }
 
-  return { index, agenda };
+  return { index, agenda, page };
 })();

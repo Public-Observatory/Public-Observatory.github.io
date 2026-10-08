@@ -32,6 +32,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 code, .id { font-family: var(--mono); font-size: 0.85em; }
+blockquote { font-family: var(--serif); }
 
 .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
 header.site { border-bottom: 1px solid var(--rule); }
@@ -44,6 +45,9 @@ nav.site a[aria-current=page] { color: var(--ink); text-decoration: underline; t
 .about-page { max-width: 680px; padding-bottom: 56px; }
 .about-page .hero { padding-bottom: 8px; }
 .about-page section p { margin: 0 0 16px; }
+.page-fallback { white-space: pre-wrap; font: inherit; }
+#page-content img { max-width: 100%; height: auto; }
+.hero p + p { margin-top: 16px; }
 
 .hero { padding: 48px 0 28px; }
 .hero h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(1.9rem, 4.5vw, 2.7rem); line-height: 1.15; margin: 0 0 14px; max-width: 22ch; }

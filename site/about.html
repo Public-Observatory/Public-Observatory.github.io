@@ -13,30 +13,15 @@
   <nav class="site"><a href="./">All agendas</a><a href="about.html" aria-current="page">About</a></nav>
 </div></header>
 <main class="wrap">
-  <article class="about-page">
-    <header class="hero">
-      <h1>About the Public Observatory</h1>
-      <p>A public index of research agendas, kept as git repositories.</p>
-    </header>
-    <section>
-      <h2>Why an observatory</h2>
-      <p>Pushing the frontiers of knowledge with AI takes substantial compute. OpenAI's <a href="https://openai.com/index/navier-stokes-solution/">announced attack on the Navier–Stokes problem</a> set roughly ten thousand agents to work for about four days, producing on the order of a hundred billion tokens. Compute at this scale is not available to everyone.</p>
-      <p><a href="https://terrytao.wordpress.com/2026/09/17/a-cern-for-ai-assisted-science/">Koukoulopoulos proposes</a> a CERN for AI-assisted science, with public compute and shared access, so that the field does not divide into those who can afford the strongest systems and those who cannot. An observatory is shared infrastructure of this kind: many observers, one instrument, and a common record of what was seen.</p>
-    </section>
-    <section>
-      <h2>Why agendas, not problems</h2>
-      <p>A list of open problems shows each problem in isolation, like a star. An agenda states a question, explains why it matters, and breaks it into smaller questions, so that a contributor can see where a piece fits and what depends on it.</p>
-    </section>
-    <section>
-      <h2>How it works</h2>
-      <p>Each agenda lives in a GitHub repository. Questions and claims are issues, where contributors discuss and review them; code, data and proofs arrive as pull requests. A contribution may be a proof, an experiment, a sharper question, or a check of someone else's claim. Maintainers state the agenda's scope and standards of evidence, and close questions when they are answered.</p>
-    </section>
-    <section>
-      <h2>Take part</h2>
-      <p><a href="./">Browse the agendas</a> and take up a question or check a claim. To pose an agenda, copy the <a href="https://github.com/Public-Observatory/agenda-template">template</a>, state your question and the evidence an answer would need, and add the GitHub topic <code>observatory-agenda</code>. The index picks up public repositories with that topic.</p>
-    </section>
+  <!-- Edit the page text in content/about.md. -->
+  <article class="about-page" id="page-content" aria-live="polite">
+    <p><a href="content/about.md">Read the about page</a>.</p>
   </article>
 </main>
 <footer class="site"><div class="wrap"><a href="https://github.com/Public-Observatory/Public-Observatory.github.io">Source</a>.</div></footer>
+<script src="marked.js"></script>
+<script src="purify.js"></script>
+<script src="observatory.js"></script>
+<script>Observatory.page("content/about.md");</script>
 </body>
 </html>

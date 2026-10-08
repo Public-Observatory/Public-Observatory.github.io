@@ -23,12 +23,21 @@ agenda-template/   a new agenda's repository: agenda.json, README, issue forms, 
 tests/             tests of site/agenda.py and site/build.py
 ```
 
+## Editing the website text
+
+Edit `site/content/index.md` for the home page introduction and `site/content/about.md` for the About page. Use ordinary Markdown: `#` for the title, `##` for About sections, blank lines between paragraphs, and `[label](url)` for links. Links are relative to the HTML page. The About introduction before the first `##` is styled as the page header.
+
+The pages load these files directly; no Markdown build or installation is needed. For a quick text preview, run `python3 -m http.server -d site` and open <http://localhost:8000/> or <http://localhost:8000/about.html>. Save the Markdown and refresh. Use the full preview below to include agenda cards. Local previews need the HTTP server because browsers block these requests when opening HTML files directly.
+
+Page layout, navigation, browser titles and search descriptions remain in the HTML files. GitHub Pages includes the Markdown files automatically when the site workflow deploys.
+
 ## Development
 
 ```sh
 python3 -m unittest discover -s tests                          # the tests; standard library only, Python 3.10+
 python3 site/agenda.py check agenda-template/agenda.json       # exit 1, with the reasons, if malformed
 mkdir -p _site && cp site/*.html site/*.css site/*.js _site/
+cp -R site/content _site/
 python3 site/build.py local _site DIR...                       # index agendas in local directories, for a preview
 python3 -m http.server -d _site                                # and serve it
 ```

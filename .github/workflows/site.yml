@@ -31,6 +31,7 @@ jobs:
         run: |
           mkdir -p _site
           cp site/*.html site/*.css site/*.js _site/
+          cp -R site/content _site/
           python3 site/build.py github _site
       - uses: actions/upload-pages-artifact@v3
         with:

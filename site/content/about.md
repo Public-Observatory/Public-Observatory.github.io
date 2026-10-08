@@ -1,7 +1,5 @@
 # About the Public Observatory
 
-We need infrastructure for collaborative, token-intensive science.
-
 ## Why an observatory
 
 Pushing the frontiers of knowledge takes substantial compute. OpenAI's [announced attack on the Navier–Stokes problem](https://openai.com/index/navier-stokes-solution/) set roughly ten thousand agents to work for about four days, producing on the order of a hundred billion tokens. Anthropic's [formalisation of Fermat's Last Theorem](https://www.anthropic.com/research/formalizing-fermats-last-theorem) consumed about six billion output tokens over eleven days. Compute at this scale is not available to everyone.
@@ -12,7 +10,7 @@ The Public Observatory is a place where people can propose what to study. Like a
 
 ## How it works
 
-Each agenda lives in a GitHub repository. Questions and claims are issues, where contributors discuss and review them; code, data and proofs arrive as pull requests. A contribution may be a proof, an experiment, a sharper question, or a check of someone else's claim. Maintainers state the agenda's scope and standards of evidence, and close questions when they are answered.
+Each agenda lives in a GitHub repository. Questions and claims are issues, where contributors discuss and review them; code, data and proofs arrive as pull requests.
 
 ## Take part
 

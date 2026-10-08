@@ -1,10 +1,8 @@
 # Contributing to an agenda
 
-Choose a question, record what you find, and leave enough evidence for someone else to check it. This guide describes the shared workflow for people and their agents.
-
 ## Before starting
 
-[Browse the agendas](./), open one, and read its README and existing questions and claims, including closed issues. Follow the repository link to contribute on GitHub; the Observatory displays the record kept there.
+[Browse the agendas](./), open one, and read its README and existing questions and claims. Follow the repository link to contribute on GitHub; the Observatory displays the record kept there.
 
 ## Ask a question
 
@@ -12,7 +10,7 @@ In the agenda's repository, open an issue with the **Question** form. Give it a 
 
 ## Record a claim
 
-Open an issue with the **Claim** form. Write the claim as its title: one statement that someone else could check. State its assumptions and limits. Negative results need not be documented unless the experiment used a substantial number of tokens; in that case, record what was tried and what failed so others can avoid repeating the cost.
+Open an issue with the **Claim** form. Write the claim as its title: one statement that someone else could check. Negative results need not be documented unless the experiment used a substantial number of tokens; in that case, record what was tried and what failed so others can avoid repeating the cost.
 
 The form has three optional fields:
 
@@ -25,8 +23,6 @@ Use ordinary Markdown. Write inline mathematics between `$...$` and displayed ma
 ## Check a claim
 
 Read the statement and evidence, then check the argument or rerun the computation. Maintainers should mark a claim reproduced only after someone other than its author has checked it, and refuted only when the refutation can itself be checked. Keep the supporting discussion and evidence public.
-
-A maintainer closes a question once it is answered, linking the claims that settle it.
 
 ## Set up an agenda
 

@@ -120,7 +120,7 @@ nav.site a.cta:hover { background: var(--accent); }
 .about-page .hero::before { border-bottom: 0; }
 .hero { padding: 76px 0 72px; margin-bottom: 48px; }
 .hero h1 { font-family: var(--display); font-weight: 400; font-size: clamp(2.3rem, 5.6vw, 3.6rem); line-height: 1.08; letter-spacing: -0.01em; margin: 0 0 22px; max-width: 19ch; text-wrap: balance; }
-.hero p { color: var(--head-muted); max-width: 56ch; margin: 0; font-size: 1.1rem; line-height: 1.65; }
+.hero p { color: var(--head-ink); max-width: 56ch; margin: 0; font: inherit; }
 .hero a { color: var(--head-link); }
 .agenda-head a { color: var(--head-gold); }
 .hero p + p { margin-top: 16px; }
@@ -130,7 +130,10 @@ nav.site a.cta:hover { background: var(--accent); }
 #page-content img { max-width: 100%; height: auto; }
 
 .about-page { max-width: 680px; margin: 0 auto; padding-bottom: 72px; }
-.about-page .hero { padding-bottom: 60px; }
+.about-page .hero { padding-bottom: 16px; margin-bottom: 24px; }
+.about-page .hero h1:last-child { margin-bottom: 0; }
+.about-page .hero p { max-width: none; line-height: 1.7; }
+.about-page .hero + section h2 { margin-top: 24px; }
 .about-page section { counter-increment: section; }
 .about-page section h2 { display: block; font-family: var(--display); font-size: 1.6rem; font-weight: 400; margin: 40px 0 12px; padding: 0; border: 0; }
 .about-page section h2::before { content: "§ " counter(section); display: block; margin-bottom: 4px; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; color: var(--muted); }

@@ -139,7 +139,7 @@ nav.site a.cta:hover { background: var(--accent); }
 /* ==========================================================================
    5. The index (search, filters, entries)
    ========================================================================== */
-.section-head { display: flex; align-items: baseline; gap: 12px; border-top: 1px solid var(--ink); padding-top: 12px; margin: 0 0 8px; }
+.section-head { display: flex; align-items: baseline; gap: 12px; padding-top: 12px; margin: 0 0 8px; }
 .section-head h2 { font-family: var(--display); font-size: 1.6rem; font-weight: 400; margin: 0; padding: 0; border: 0; }
 .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 10px 0 14px; border-bottom: 1px solid var(--rule); font-family: var(--sans); }
 .search { position: relative; flex: 1 1 260px; }
@@ -238,10 +238,10 @@ select { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 0; bac
 .progress { margin-top: 10px; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.8rem; }
 .progress .bar { flex: 1; }
 
-/* Sections of an agenda page share one heading style: a rule above, the count beside. */
+/* Sections of an agenda page share one heading style, with the count beside. */
 .body > section { padding-top: 40px; }
 .body > section:first-child { padding-top: 8px; }
-section h2 { font-family: var(--display); font-size: 1.6rem; font-weight: 400; margin: 0 0 14px; padding-top: 12px; border-top: 1px solid var(--ink); display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+section h2 { font-family: var(--display); font-size: 1.6rem; font-weight: 400; margin: 0 0 14px; padding-top: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 section h2 small a { color: inherit; }
 section h2 small a:hover { color: var(--accent); }

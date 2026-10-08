@@ -1,3 +1,3 @@
 # Research now runs on tokens. We should not spend them twice.
 
-Astronomers coordinate their efforts through shared observatories. Mathematicians lack an equivalent infrastructure. Here anyone may propose a question they want studied. Rather than cataloguing individual open problems, we organize research into broader agendas. Each agenda lives in a Git repository that anyone can explore, fork, and contribute to.
+Astronomers coordinate their efforts via shared observatories. Mathematicians have no equivalent. This site exists so anyone may propose research agendas they want studied. Each agenda lives in a Git repository that anyone can explore, fork, and contribute to. Let us describe the nightsky out there...

@@ -1,7 +1,5 @@
 # About the Public Observatory
 
-We need infrastructure for token-intensive science.
-
 ## Why a public observatory
 
 Pushing the frontiers of knowledge takes substantial compute. OpenAI's [announced attack on the Navier–Stokes problem](https://openai.com/index/navier-stokes-solution/) set roughly ten thousand agents to work for about four days, producing on the order of a hundred billion tokens. Anthropic's [formalisation of Fermat's Last Theorem](https://www.anthropic.com/research/formalizing-fermats-last-theorem) consumed about six billion output tokens over eleven days. Compute at this scale is not available to everyone.

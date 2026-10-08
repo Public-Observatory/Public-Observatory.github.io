@@ -15,7 +15,7 @@
   --night: #05070f;
   --night-ink: #f3ecdc;
   --night-muted: rgba(243, 236, 220, 0.72);
-  --night-gold: #e2c27a;
+  --night-gold: #a5b8ec;
   --display: "Baskervville", "Libre Baskerville", Baskerville, Georgia, serif;
   --sans: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -87,6 +87,8 @@ nav.site a.cta:hover { background: var(--accent); }
     var(--stars-a) 0 0 / 420px 420px, var(--stars-b) 140px 60px / 263px 263px,
     linear-gradient(180deg, var(--night) 0%, #0a0f1d 55%, #141d33 100%);
   border-bottom: 1px solid var(--ink); }
+/* Only the landing page keeps the stars; the heads of all other pages are plain black. */
+.about-page .hero::before, .agenda-head::before { background: #000; }
 .hero { padding: 76px 0 72px; margin-bottom: 48px; }
 .hero h1 { font-family: var(--display); font-weight: 400; font-size: clamp(2.3rem, 5.6vw, 3.6rem); line-height: 1.08; letter-spacing: -0.01em; margin: 0 0 22px; max-width: 19ch; text-wrap: balance; }
 .hero p { color: var(--night-muted); max-width: 56ch; margin: 0; font-size: 1.1rem; line-height: 1.65; }

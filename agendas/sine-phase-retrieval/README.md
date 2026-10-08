@@ -59,3 +59,5 @@ Hence stability forces equivalence of the $L^1$ and $L^2$ norms on this space. T
 ## Contributions
 
 Prove a stated case, produce a counterexample, or establish a necessary condition that separates the three questions. For instability, exhibit unit vectors whose overlap tends to zero. Numerical searches should report the frequencies, coefficients, quadrature error, and normalization; a small sampled overlap alone does not prove instability. The baseline is a deduction supplied with this revision, not a claim of a new theorem or an independently reviewed result.
+
+See the [contribution guide](https://public-observatory.github.io/docs.html) for the shared workflow.

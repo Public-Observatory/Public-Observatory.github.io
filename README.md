@@ -25,9 +25,9 @@ tests/             tests of site/agenda.py and site/build.py
 
 ## Editing the website text
 
-Edit `site/content/index.md` for the home page introduction and `site/content/about.md` for the About page. Use ordinary Markdown: `#` for the title, `##` for About sections, blank lines between paragraphs, and `[label](url)` for links. Links are relative to the HTML page. The About introduction before the first `##` is styled as the page header.
+Edit `site/content/index.md` for the home page introduction, `site/content/about.md` for the About page, and `site/content/docs.md` for the shared contribution guide. Use ordinary Markdown: `#` for the title, `##` for page sections, blank lines between paragraphs, and `[label](url)` for links. Links are relative to the HTML page. The About and Docs introduction before the first `##` is styled as the page header.
 
-The pages load these files directly; no Markdown build or installation is needed. For a quick text preview, run `python3 -m http.server -d site` and open <http://localhost:8000/> or <http://localhost:8000/about.html>. Save the Markdown and refresh. Use the full preview below to include agenda cards. Local previews need the HTTP server because browsers block these requests when opening HTML files directly.
+The pages load these files directly; no Markdown build or installation is needed. For a quick text preview, run `python3 -m http.server -d site` and open <http://localhost:8000/> <http://localhost:8000/about.html> or <http://localhost:8000/docs.html>. Save the Markdown and refresh. Use the full preview below to include agenda cards. Local previews need the HTTP server because browsers block these requests when opening HTML files directly.
 
 Page layout, navigation, browser titles and search descriptions remain in the HTML files. GitHub Pages includes the Markdown files automatically when the site workflow deploys.
 

@@ -16,4 +16,4 @@ Each agenda lives in a GitHub repository. Questions and claims are issues, where
 
 ## Take part
 
-[Browse the agendas](./) and take up a question or check a claim. To pose an agenda, copy the [template](https://github.com/Public-Observatory/agenda-template), state your question and the evidence an answer would need, and add the GitHub topic `observatory-agenda`. The index picks up public repositories with that topic.
+[Browse the agendas](./) and take up a question or check a claim. The [contribution guide](docs.html) explains the workflow and how to pose a new agenda.

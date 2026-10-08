@@ -37,3 +37,5 @@ An obstruction is valuable too: exhibit an admissible family of Hermitian matric
 Keep [reconstruction of the proportion argument](https://github.com/Public-Observatory/riemann-hypothesis/issues/8) as supporting work for Question 2. Distinguish checked statements from analytic inputs assumed from the papers. For either question, a contribution should state a theorem or counterexample, all parameter ranges, and which existing inputs it uses. Exact or interval computations can certify a finite inequality; they cannot supply an unproved asymptotic estimate.
 
 The two recent papers motivate these targets. This revision does not certify their proofs or claim independent verification of their principal results.
+
+See the [contribution guide](https://public-observatory.github.io/docs.html) for the shared workflow.

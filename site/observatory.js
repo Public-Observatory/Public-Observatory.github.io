@@ -125,7 +125,7 @@ const Observatory = (() => {
   // Shared by page copy and repository READMEs.
   function markdown(text) {
     // Keep LaTeX intact through Markdown parsing; KaTeX runs on the sanitized DOM.
-    const parser = new marked.Marked({ extensions: [{
+    const parser = new marked.Marked(markedFootnote({ backRefLabel: "Back to citation" }), { extensions: [{
       name: "math", level: "inline",
       start: (src) => src.search(/\$|\\[([]/),
       tokenizer(src) {
@@ -283,9 +283,12 @@ const Observatory = (() => {
     const first = body.firstElementChild;
     if (first?.tagName === "H1" && first.textContent.trim().toLowerCase() === title.trim().toLowerCase()) first.remove();
     // Resolve repository-relative links and images against the actual README location.
+    const localIds = new Set([...body.querySelectorAll("[id]")].map((el) => el.id));
     for (const el of body.querySelectorAll("a[href], img[src]")) {
       const attr = el.tagName === "IMG" ? "src" : "href";
       const value = el.getAttribute(attr);
+      // Footnotes and explicit README anchors refer to this rendered document.
+      if (attr === "href" && value.startsWith("#") && localIds.has(value.slice(1))) continue;
       const base = attr === "src" ? readme.raw_url : readme.url;
       try {
         const url = new URL(value, base || github);

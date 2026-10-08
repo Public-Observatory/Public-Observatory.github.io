@@ -35,6 +35,7 @@ Page layout, navigation, browser titles and search descriptions remain in the HT
 
 ```sh
 python3 -m unittest discover -s tests                          # the tests; standard library only, Python 3.10+
+npm ci --ignore-scripts && npm test                           # Markdown rendering tests; Node.js 24+
 python3 site/agenda.py check agenda-template/agenda.json       # exit 1, with the reasons, if malformed
 mkdir -p _site && cp site/*.html site/*.css site/*.js _site/
 cp -R site/content _site/
@@ -44,6 +45,6 @@ python3 -m http.server -d _site                                # and serve it
 
 A local agenda directory holds `agenda.json` and, optionally, `README.md` and `issues.json`, a list of issues as the GitHub API returns them. The index includes each repository's README, displayed on its agenda page and refreshed with the hourly build. Relative README links and images point back to the source repository. A missing README does not remove the agenda from the index.
 
-README rendering uses vendored Marked 18.1.0 (`site/marked.js`, MIT) and DOMPurify 3.4.16 (`site/purify.js`, Apache-2.0 OR MPL-2.0); their license notices are included in the files.
+README rendering uses vendored Marked 18.1.0 (`site/marked.js`, MIT), marked-footnote 1.4.0 (`site/marked-footnote.js`, MIT) for GitHub-style footnotes, and DOMPurify 3.4.16 (`site/purify.js`, Apache-2.0 OR MPL-2.0); their license notices are included in the files.
 
 An agenda's check fetches `site/agenda.py` from this repository; the agenda's variable `OBSERVATORY_REPO` points it at another copy.

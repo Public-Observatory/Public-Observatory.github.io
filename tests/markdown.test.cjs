@@ -1,0 +1,83 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { resolve } = require('node:path');
+const { runInContext } = require('node:vm');
+const { JSDOM } = require('jsdom');
+
+async function render(text) {
+  const dom = new JSDOM('<main id="main"></main>', {
+    url: 'https://observatory.example/agenda.html?repo=Lab/relu-fibres',
+    runScripts: 'outside-only',
+  });
+  const entry = {
+    repo: 'Lab/relu-fibres', url: 'https://github.com/Lab/relu-fibres',
+    agenda: { title: 'Fibres', kind: 'open-agenda', question: '', summary: '', maintainers: [] },
+    summary: { questions: 0, answered: 0, claims: 0, contributors: 0 },
+    questions: [], claims: [],
+    readme: {
+      text,
+      url: 'https://github.com/Lab/relu-fibres/blob/main/docs/README.md',
+      raw_url: 'https://raw.githubusercontent.com/Lab/relu-fibres/main/docs/README.md',
+    },
+  };
+  dom.window.fetch = async () => ({ ok: true, json: async () => ({ agendas: [entry] }) });
+  // Load the actual page's scripts in order, including its agenda() entry point.
+  const html = readFileSync(resolve(__dirname, '../site/agenda.html'), 'utf8');
+  for (const match of html.matchAll(/<script(?: src="([^"]+)")?>([\s\S]*?)<\/script>/g)) {
+    if (match[1]?.startsWith('https:')) continue; // KaTeX is independent of footnote parsing.
+    await runInContext(match[1]
+      ? readFileSync(resolve(__dirname, '../site', match[1]), 'utf8') : match[2], dom.getInternalVMContext());
+  }
+  return dom;
+}
+
+test('GitHub footnotes render as references with local citations and return links', async () => {
+  const dom = await render(`# Fibres
+
+Fibres can be disconnected.[^1] Hidden symmetries also occur.[^2] See again.[^1]
+
+## References
+
+[^1]: Grigsby et al., [*Functional dimension*](https://arxiv.org/abs/2209.04036v2), 2025.
+[^2]: Grigsby et al., [*Hidden Symmetries*](https://proceedings.mlr.press/v202/grigsby23a.html), 2023.
+`);
+  try {
+    const doc = dom.window.document;
+    assert.equal(doc.querySelectorAll('.footnotes ol > li').length, 2);
+    assert.deepEqual([...doc.querySelectorAll('[data-footnote-ref]')].map(a => a.textContent), ['1', '2', '1']);
+    assert.equal(doc.querySelectorAll('[data-footnote-backref]').length, 3);
+    for (const link of doc.querySelectorAll('[data-footnote-ref], [data-footnote-backref]')) {
+      assert.ok(link.getAttribute('href').startsWith('#'));
+      assert.ok(doc.getElementById(link.getAttribute('href').slice(1)));
+    }
+    assert.equal(doc.querySelector('.footnotes a em').textContent, 'Functional dimension');
+    assert.ok(!doc.querySelector('.readme-body').textContent.includes('[^1]'));
+  } finally { dom.window.close(); }
+});
+
+test('footnote contents retain Markdown and math, while unsafe HTML is sanitized', async () => {
+  const dom = await render('A note.[^long]\n\n[^long]: **First** paragraph with $f_\\theta$.\n\n    Second paragraph with [paper](paper.pdf).\n\n    <img src="plot.png" onerror="alert(1)"> <script>alert(1)</script>\n');
+  try {
+    const doc = dom.window.document;
+    const note = doc.querySelector('.footnotes li');
+    assert.ok(note.querySelectorAll('p').length >= 2);
+    assert.equal(note.querySelector('strong').textContent, 'First');
+    assert.ok(note.textContent.includes('$f_\\theta$'));
+    assert.equal(note.querySelector('a').href, 'https://github.com/Lab/relu-fibres/blob/main/docs/paper.pdf');
+    assert.equal(note.querySelector('img').src, 'https://raw.githubusercontent.com/Lab/relu-fibres/main/docs/plot.png');
+    assert.equal(note.querySelector('script, [onerror]'), null);
+  } finally { dom.window.close(); }
+});
+
+test('undefined footnotes and code stay literal; ordinary reference links still work', async () => {
+  const dom = await render('Unknown[^missing]. `[^code]` [paper][source] [section](#on-github).\n\n[source]: https://example.com/paper\n');
+  try {
+    const doc = dom.window.document;
+    assert.equal(doc.querySelector('.footnotes'), null);
+    assert.ok(doc.querySelector('.readme-body').textContent.includes('[^missing]'));
+    assert.equal(doc.querySelector('code').textContent, '[^code]');
+    assert.equal(doc.querySelector('.readme-body a').href, 'https://example.com/paper');
+    assert.equal(doc.querySelector('.readme-body a:last-child').href, 'https://github.com/Lab/relu-fibres/blob/main/docs/README.md#on-github');
+  } finally { dom.window.close(); }
+});

@@ -5,15 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agenda · The Public Observatory</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.19.0/katex.min.css" integrity="sha512-ShgGHY1DxXgJ048WLBq4a1WB85Ppw9pb59F5waDdd/mAzSuKfCg4pzrsIECClh+1IhwY3ux6e4ZEbjw15y9kGQ==" crossorigin="anonymous">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baskervville:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:wght@400;500&family=Open+Sans:ital,wght@0,400..700;1,400..700&display=swap">
 <link rel="stylesheet" href="observatory.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="site"><div class="wrap">
   <a class="brand" href="./">The Public Observatory</a>
-  <nav class="site"><a href="./">All agendas</a><a href="about.html">About</a></nav>
+  <nav class="site" aria-label="Site"><a href="./">Agendas</a><a href="about.html">About</a><a class="cta" href="https://github.com/Public-Observatory/agenda-template">Pose an agenda</a></nav>
 </div></header>
 <main class="wrap" id="main"><p class="empty">Loading…</p></main>
-<footer class="site"><div class="wrap" id="built"></div></footer>
+<footer class="site"><div class="wrap">
+  <span id="built">The Public Observatory. A public index of research agendas.</span>
+  <nav aria-label="Footer"><a href="./">Agendas</a><a href="about.html">About</a><a href="https://github.com/Public-Observatory/agenda-template">Agenda template</a><a href="https://github.com/Public-Observatory/Public-Observatory.github.io">Source</a></nav>
+</div></footer>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.19.0/katex.min.js" integrity="sha512-PMGpBvoAMUyHk238o5oDsOos5wAGWnc02JgF5lk5T5Nt2K4A2RHW0NyL1jd+IRSh0DmxcQNu0j/OhhrTDfaw0Q==" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.19.0/contrib/auto-render.min.js" integrity="sha512-0HzJcHCD+wBh9kNUUcm3DWH9IbNDfudsYyMD5EHwSuFK6aEsaa/UEPqqk4t0pm4bbmwR6A11yNsD7Q+nz6XF+Q==" crossorigin="anonymous"></script>
 <script src="marked.js"></script>

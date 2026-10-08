@@ -5,20 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>About · The Public Observatory</title>
 <meta name="description" content="Why the Public Observatory exists: coordinate research, share what has been tried, and build on each other's work.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baskervville:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:wght@400;500&family=Open+Sans:ital,wght@0,400..700;1,400..700&display=swap">
 <link rel="stylesheet" href="observatory.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="site"><div class="wrap">
   <a class="brand" href="./">The Public Observatory</a>
-  <nav class="site"><a href="./">All agendas</a><a href="about.html" aria-current="page">About</a></nav>
+  <nav class="site" aria-label="Site"><a href="./">Agendas</a><a href="about.html" aria-current="page">About</a><a class="cta" href="https://github.com/Public-Observatory/agenda-template">Pose an agenda</a></nav>
 </div></header>
-<main class="wrap">
+<main class="wrap" id="main">
   <!-- Edit the page text in content/about.md. -->
   <article class="about-page" id="page-content" aria-live="polite">
     <p><a href="content/about.md">Read the about page</a>.</p>
   </article>
 </main>
-<footer class="site"><div class="wrap"><a href="https://github.com/Public-Observatory/Public-Observatory.github.io">Source</a>.</div></footer>
+<footer class="site"><div class="wrap">
+  <span>The Public Observatory. A public index of research agendas.</span>
+  <nav aria-label="Footer"><a href="./">Agendas</a><a href="about.html">About</a><a href="https://github.com/Public-Observatory/agenda-template">Agenda template</a><a href="https://github.com/Public-Observatory/Public-Observatory.github.io">Source</a></nav>
+</div></footer>
 <script src="marked.js"></script>
 <script src="purify.js"></script>
 <script src="observatory.js"></script>

@@ -6,7 +6,7 @@
 "use strict";
 
 const Observatory = (() => {
-  const MARK = { open: "○", answered: "✓" };
+  const MARK = { open: "⋅", answered: "✓" };
   const KIND = { "open-agenda": "Open agenda", "closed-agenda": "Closed agenda", problem: "Problem" };
 
   function h(tag, attrs, ...children) {
@@ -24,8 +24,9 @@ const Observatory = (() => {
     return el;
   }
 
-  const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + "s"}`;
-  const mark = (state) => h("span", { class: `mark s-${state}`, title: state }, MARK[state] || "·");
+  const noun = (n, word, many) => (n === 1 ? word : many || word + "s");
+  const plural = (n, word, many) => `${n} ${noun(n, word, many)}`;
+  const mark = (state) => h("span", { class: `mark s-${state}`, title: state }, MARK[state] ?? "·");
   const chip = (state) => h("span", { class: `status s-${state}` }, state);
   const safe = (url) => (/^https:\/\//.test(url || "") ? url : null);
 
@@ -176,10 +177,30 @@ const Observatory = (() => {
 
   // ------------------------------------------------------------------ the index
 
+  const stamp = (iso) => iso ? iso.slice(0, 16).replace("T", " ") + " UTC" : "";
+  // "3 days ago", or the date once that says more than the interval does.
+  function ago(iso) {
+    if (!iso) return "";
+    const days = Math.round((Date.now() - Date.parse(iso)) / 864e5);
+    if (days > 60) return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    const hours = Math.round((Date.now() - Date.parse(iso)) / 36e5);
+    const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+    return hours < 24 ? rtf.format(-Math.max(hours, 0), "hour") : rtf.format(-days, "day");
+  }
+  const meter = (s) => h("span", { class: "meter", title: `${s.answered} of ${s.questions} questions answered` },
+    h("span", { class: "bar" }, h("span", { style: `width:${Math.round(100 * (s.questions ? s.answered / s.questions : 0))}%` })),
+    `${s.answered} of ${plural(s.questions, "question")} answered`);
+
   async function index() {
-    menu(document.getElementById("sort"));
+    // The query string holds the search, so that a filtered index can be linked to and survives the back button.
+    const params = new URLSearchParams(location.search);
+    const sort = document.getElementById("sort");
+    if ([...sort.options].some((o) => o.value === params.get("sort"))) sort.value = params.get("sort");
+    menu(sort);
     const cards = document.getElementById("cards");
     const empty = document.getElementById("empty");
+    const count = document.getElementById("count");
+    const search = document.getElementById("q");
     let data;
     try {
       data = await json("agendas.json");
@@ -188,7 +209,7 @@ const Observatory = (() => {
       empty.textContent = "The index could not be loaded.";
       return;
     }
-    const state = { q: "", kind: "", sort: "active" };
+    const state = { q: params.get("q") || "", kind: params.get("kind") || "", sort: sort.value };
     const progress = (s) => (s.questions ? s.answered / s.questions : 0);
     const open = (s) => s.questions - s.answered;
     const order = {
@@ -198,20 +219,22 @@ const Observatory = (() => {
       progress: (a, b) => progress(b.summary) - progress(a.summary),
     };
 
-    function card(e) {
+    function entry(e) {
       const a = e.agenda, s = e.summary;
-      const pct = Math.round(100 * progress(s));
-      return h("a", { class: "card", href: `agenda.html?repo=${encodeURIComponent(e.repo)}` },
-        h("div", {}, h("span", { class: "badge" }, KIND[a.kind] || a.kind)),
-        h("h2", {}, a.title),
-        h("p", { class: "question" }, rich(a.question, false)),
-        h("p", { class: "summary" }, rich(a.summary, false)),
-        h("div", { class: "bar", title: `${s.answered} of ${s.questions} questions answered` },
-          h("span", { style: `width:${pct}%` })),
-        h("div", { class: "foot" },
-          h("span", {}, `${s.answered}/${s.questions} questions answered`),
-          h("span", {}, plural(s.claims, "claim")),
-          h("span", {}, plural(s.contributors, "contributor"))));
+      return h("li", { class: "entry" },
+        h("div", { class: "entry-no", "aria-hidden": "true" }),
+        h("div", {},
+          h("div", { class: "entry-kind" }, h("span", { class: "badge" }, KIND[a.kind] || a.kind), " · ", e.repo.split("/")[0]),
+          h("h3", {}, h("a", { href: `agenda.html?repo=${encodeURIComponent(e.repo)}` }, a.title)),
+          h("p", { class: "question" }, rich(a.question, false)),
+          h("p", { class: "summary" }, rich(a.summary, false)),
+          h("div", { class: "entry-meta" },
+            meter(s),
+            h("span", {}, plural(s.claims, "claim")),
+            h("span", {}, plural(s.contributors, "contributor")),
+            e.pushed && h("span", { title: stamp(e.pushed) }, `active ${ago(e.pushed)}`),
+            (a.tags || []).length ? h("span", { class: "tags" }, a.tags.map((t) =>
+              h("button", { type: "button", class: "tag", title: `Show agendas on ${t}`, onclick: () => { search.value = t; state.q = t; render(); } }, t))) : null)));
     }
 
     function render() {
@@ -223,15 +246,20 @@ const Observatory = (() => {
           return words.every((w) => text.includes(w));
         })
         .sort(order[state.sort]);
-      cards.replaceChildren(...shown.map(card));
+      cards.replaceChildren(...shown.map(entry));
       typeset(cards);
+      count.textContent = shown.length === data.agendas.length ? plural(data.agendas.length, "agenda") : `${shown.length} of ${data.agendas.length}`;
       empty.hidden = shown.length > 0;
       empty.textContent = data.agendas.length ? "No agenda matches." : "No agendas yet. Pose the first one.";
+      const query = new URLSearchParams(Object.entries(state).filter(([k, v]) => v && !(k === "sort" && v === "active")));
+      history.replaceState(null, "", query.size ? `?${query}` : location.pathname);
     }
 
-    document.getElementById("q").addEventListener("input", (ev) => { state.q = ev.target.value; render(); });
-    document.getElementById("sort").addEventListener("change", (ev) => { state.sort = ev.target.value; render(); });
+    search.value = state.q;
+    search.addEventListener("input", (ev) => { state.q = ev.target.value; render(); });
+    sort.addEventListener("change", (ev) => { state.sort = ev.target.value; render(); });
     for (const b of document.querySelectorAll(".chip")) {
+      b.setAttribute("aria-pressed", String(b.dataset.kind === state.kind));
       b.addEventListener("click", () => {
         state.kind = b.dataset.kind;
         for (const o of document.querySelectorAll(".chip")) o.setAttribute("aria-pressed", String(o === b));
@@ -239,38 +267,41 @@ const Observatory = (() => {
       });
     }
     render();
-    if (data.built) document.getElementById("built").append(` Index built ${data.built.slice(0, 16).replace("T", " ")} UTC.`);
+    if (data.built) document.getElementById("built").append(` Index built ${stamp(data.built)}.`);
   }
 
   // ------------------------------------------------------------------ one agenda
 
-  function readmeSection(readme, github) {
-    const section = h("section", { class: "readme", id: "readme" },
-      h("div", { class: "readme-source note" }, "From the repository README",
-        safe(readme?.url) && h("a", { href: readme.url }, "Read on GitHub ↗")));
-    if (!readme?.text) {
-      section.append(h("p", { class: "note" }, "The README is not available in this snapshot.",
-        github && [" ", h("a", { href: `${github}#readme` }, "Read it on GitHub"), "."]));
-      return section;
-    }
+  function readmeBody(readme, github, title) {
     const body = h("article", { class: "readme-body" });
     if (!window.marked || !window.DOMPurify) {
       body.append(h("pre", { class: "readme-fallback" }, readme.text));
-    } else {
-      body.append(markdown(readme.text));
-      // Resolve repository-relative links and images against the actual README location.
-      for (const el of body.querySelectorAll("a[href], img[src]")) {
-        const attr = el.tagName === "IMG" ? "src" : "href";
-        const value = el.getAttribute(attr);
-        const base = attr === "src" ? readme.raw_url : readme.url;
-        try {
-          const url = new URL(value, base || github);
-          if (!["https:", "http:", ...(attr === "href" ? ["mailto:"] : [])].includes(url.protocol)) throw new Error();
-          el.setAttribute(attr, url.href);
-        } catch { el.removeAttribute(attr); }
-      }
+      return body;
     }
-    section.append(body);
+    body.append(markdown(readme.text));
+    // The page already sets the title, so a README that opens by repeating it loses that heading.
+    const first = body.firstElementChild;
+    if (first?.tagName === "H1" && first.textContent.trim().toLowerCase() === title.trim().toLowerCase()) first.remove();
+    // Resolve repository-relative links and images against the actual README location.
+    for (const el of body.querySelectorAll("a[href], img[src]")) {
+      const attr = el.tagName === "IMG" ? "src" : "href";
+      const value = el.getAttribute(attr);
+      const base = attr === "src" ? readme.raw_url : readme.url;
+      try {
+        const url = new URL(value, base || github);
+        if (!["https:", "http:", ...(attr === "href" ? ["mailto:"] : [])].includes(url.protocol)) throw new Error();
+        el.setAttribute(attr, url.href);
+      } catch { el.removeAttribute(attr); }
+    }
+    return body;
+  }
+
+  function readmeSection(readme, github, title) {
+    const source = safe(readme?.url) || (github && `${github}#readme`);
+    const section = h("section", { id: "agenda" },
+      h("h2", {}, "The agenda", h("small", {}, "From the README", source && [" · ", h("a", { href: source }, "GitHub ↗")])));
+    section.append(readme?.text ? readmeBody(readme, github, title)
+      : h("p", { class: "note" }, "The README is not available in this snapshot.", github && [" ", h("a", { href: `${github}#readme` }, "Read it on GitHub"), "."]));
     return section;
   }
 
@@ -289,8 +320,27 @@ const Observatory = (() => {
     document.title = `${entry.agenda.title} · The Public Observatory`;
     main.replaceChildren(...render(entry));
     typeset(main);
-    if (data.built) document.getElementById("built").append(`As of ${data.built.slice(0, 16).replace("T", " ")} UTC.`);
+    follow(main);
+    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+    if (data.built) document.getElementById("built").append(` As of ${stamp(data.built)}.`);
   }
+
+  // The contents in the margin mark the section being read.
+  function follow(main) {
+    const links = [...main.querySelectorAll(".contents a")];
+    if (!links.length) return;
+    const sections = links.map((a) => document.getElementById(a.hash.slice(1)));
+    const update = () => {
+      let current = sections[0];
+      for (const s of sections) if (s.getBoundingClientRect().top < 120) current = s;
+      links.forEach((a, i) => a.classList.toggle("current", sections[i] === current));
+    };
+    addEventListener("scroll", update, { passive: true });
+    update();
+  }
+
+  // An issue's body is its first line, the question or claim itself, then any paragraphs that explain it.
+  const paragraphs = (text) => String(text).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).map((p) => h("p", {}, rich(p)));
 
   function render(entry) {
     const a = entry.agenda, s = entry.summary;
@@ -300,24 +350,14 @@ const Observatory = (() => {
     const answers = {};
     for (const c of entry.claims) for (const n of c.answers) (answers[n] ||= []).push(c);
     const link = (i) => safe(i.url) ? h("a", { href: i.url }, `#${i.number}`) : `#${i.number}`;
+    const by = (i) => h("span", {}, i.author, " · ", link(i), i.created ? ` · ${ago(i.created)}` : "");
 
-    const head = h("div", { class: "agenda-head" },
+    const head = h("header", { class: "agenda-head" },
+      h("div", { class: "crumbs" }, h("a", { href: "./" }, "← All agendas")),
       h("span", { class: "badge" }, KIND[a.kind] || a.kind),
       h("h1", {}, a.title),
       h("p", { class: "question" }, rich(a.question)),
-      h("p", { class: "summary" }, rich(a.summary)),
-      h("div", { class: "note" }, "Maintained by ", a.maintainers.map((m, i) => [i ? ", " : "",
-        github ? h("a", { href: `https://github.com/${m}` }, m) : m])),
-      h("div", { class: "actions" },
-        github && h("a", { class: "button primary", href: github }, "View on GitHub ↗"),
-        h("a", { class: "button", href: "#readme" }, "Read the agenda"),
-        github && h("a", { class: "button", href: form("question.yml", {}) }, "Pose a question"),
-        github && h("a", { class: "button", href: form("claim.yml", {}) }, "Record a claim"),
-      ));
-
-    const stats = h("div", { class: "stats" },
-      [[`${s.answered}/${s.questions}`, "questions answered"], [s.claims, "claims"], [s.contributors, "contributors"]]
-        .map(([n, label]) => h("div", { class: "stat" }, h("b", {}, n), h("span", {}, label))));
+      h("p", { class: "summary" }, rich(a.summary)));
 
     // The tree of questions: a question whose parents are not in the agenda is a root.
     const roots = entry.questions.filter((q) => !q.parents.some((p) => questions[p]));
@@ -325,32 +365,63 @@ const Observatory = (() => {
     function node(q) {
       if (seen.has(q.number)) return h("li", { class: "q note" }, `(see #${q.number} above)`);
       seen.add(q.number);
-      const li = h("li", { class: "q" },
-        h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, rich(q.text)), chip(q.status)),
-        h("div", { class: "q-meta" }, link(q),
-          github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "answer it")),
+      const li = h("li", { class: "q", "data-status": q.status },
+        h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, paragraphs(q.text)), chip(q.status)),
+        h("div", { class: "q-meta" }, by(q),
+          github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "Answer it")),
         (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
-          h("div", { class: "answer" }, h("span", { class: "text" }, rich(c.text)), h("span", { class: "note" }, c.author, " · ", link(c))))) : null);
+          h("div", { class: "answer" }, h("span", { class: "text" }, rich(c.text)), h("span", { class: "note" }, by(c))))) : null);
       const subs = entry.questions.filter((x) => x.parents.includes(q.number));
       if (subs.length) li.append(h("ul", {}, subs.map(node)));
       return li;
     }
-    const tree = h("section", {}, h("h2", {}, "Questions", h("small", {}, plural(s.questions, "question"))),
-      roots.length ? h("ul", { class: "tree" }, roots.map(node))
-                   : h("p", { class: "note" }, "No questions yet. Pose the first subquestion."));
+    const open = s.questions - s.answered;
+    const treeList = roots.length ? h("ul", { class: "tree" }, roots.map(node)) : null;
+    // Showing only open questions hides an answered question with open subquestions, and its subquestions with it;
+    // the filter therefore applies to leaves of the tree and keeps every ancestor of a shown question.
+    function only(status) {
+      for (const li of [...treeList.querySelectorAll("li.q")].reverse()) {
+        const shownChild = li.querySelector(":scope > ul > li.q:not([hidden])");
+        li.hidden = !!status && li.dataset.status !== status && !shownChild;
+      }
+    }
+    const filter = treeList && s.answered && open ? h("div", { class: "q-filter chips", role: "group", "aria-label": "Show" },
+      [["", "All"], ["open", "Open"], ["answered", "Answered"]].map(([v, label]) => h("button", { type: "button", class: "chip", "aria-pressed": String(!v),
+        onclick: (ev) => { only(v); for (const b of ev.target.parentNode.children) b.setAttribute("aria-pressed", String(b === ev.target)); } }, label))) : null;
+    const tree = h("section", { id: "questions" },
+      h("h2", {}, "Questions", h("small", {}, `${open} open · ${s.answered} answered`)),
+      filter, treeList || h("p", { class: "note" }, "No questions yet. Pose the first subquestion."));
 
-    const list = (title, items, row, none) => h("section", {}, h("h2", {}, title),
+    const list = (id, title, items, row, none) => h("section", { id }, h("h2", {}, title, h("small", {}, plural(items.length, "claim"))),
       items.length ? h("ul", { class: "list" }, items.map(row)) : h("p", { class: "note" }, none));
-    const claimRow = (c) => h("li", {}, h("div", { class: "text" }, rich(c.text)),
-      h("div", { class: "why" }, c.author, " · ", link(c), c.comments ? ` · ${plural(c.comments, "comment")}` : ""));
+    const claimRow = (c) => h("li", {}, h("div", { class: "text" }, paragraphs(c.text)),
+      h("div", { class: "why" }, by(c), c.comments ? ` · ${plural(c.comments, "comment")}` : ""));
 
     // A claim that answers an answered question is shown under that question, and only there.
     const settled = (c) => c.answers.some((n) => questions[n] && questions[n].status === "answered");
-    const claims = list("Claims", entry.claims.filter((c) => !settled(c)), claimRow, entry.claims.length
+    const loose = entry.claims.filter((c) => !settled(c));
+    const claims = list("claims", "Claims", loose, claimRow, entry.claims.length
       ? "Every claim answers an answered question and is shown under it."
       : "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
-    return [head, readmeSection(entry.readme, github), stats,
-      h("div", { class: "agenda-activity" }, tree, claims)];
+
+    const stats = h("div", {},
+      h("div", { class: "stats" }, [[s.questions, "question"], [s.claims, "claim"], [s.contributors, "contributor"]]
+        .map(([n, word]) => h("div", { class: "stat" }, h("b", {}, n), h("span", {}, noun(n, word))))),
+      h("div", { class: "progress" }, meter(s)));
+    const side = h("aside", {}, h("div", { class: "side" },
+      stats,
+      github && h("div", { class: "actions" },
+        a.kind !== "closed-agenda" && h("a", { class: "button primary", href: form("question.yml", {}) }, "Pose a question"),
+        h("a", { class: "button", href: form("claim.yml", {}) }, "Record a claim"),
+        h("a", { class: "button", href: github }, "Repository ↗")),
+      h("div", { class: "who" }, h("span", { class: "contents-title" }, "Maintained by"), a.maintainers.map((m, i) => [i ? ", " : "",
+        github ? h("a", { href: `https://github.com/${m}` }, m) : m])),
+      h("nav", { class: "contents", "aria-label": "On this page" }, h("span", { class: "contents-title" }, "On this page"),
+        h("ol", {}, [["agenda", "The agenda", ""], ["questions", "Questions", s.questions], ["claims", "Claims", loose.length]]
+          .map(([id, label, n]) => h("li", {}, h("a", { href: `#${id}` }, label, n === "" ? null : h("small", {}, n))))))));
+
+    return [head, h("div", { class: "layout" }, side,
+      h("div", { class: "body" }, readmeSection(entry.readme, github, a.title), tree, claims))];
   }
 
   return { index, agenda, page };

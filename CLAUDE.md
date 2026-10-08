@@ -24,6 +24,7 @@ uv run --no-project --python 3.10 python -m unittest discover -s tests   # the o
 - One broken agenda never takes the index down: it is skipped and reported.
 - Text from issues and agenda files is untrusted. The pages insert it only as text, never as HTML, and follow only `https://` links from it. Mathematics in it, written in LaTeX between `$...$` or `$$...$$`, is typeset by KaTeX from cdnjs, with `trust` off; without KaTeX the LaTeX is shown as written.
 - Standard library only, Python 3.10+, and no build step for the pages.
+- Fonts (Baskervville for headings, Open Sans for text, IBM Plex Mono for labels) come from Google Fonts; without them the pages fall back to system fonts. The night sky of the page heads is drawn in CSS, with no images.
 
 ## Style
 

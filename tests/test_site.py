@@ -66,6 +66,17 @@ class AgendaTest(unittest.TestCase):
 
 
 class IssuesTest(unittest.TestCase):
+    def test_problem_displays_title_statement_and_motivation_only(self):
+        q = build.item(issue(8, "question", "### Statement\n\nIs it finite?\n\n"
+                             "### Why it matters\n\nThis would give a bound.\n\n"
+                             "### Further details\n\nDetails stay on GitHub.", title="Finiteness"))
+        self.assertEqual((q["title"], q["text"], q["motivation"]),
+                         ("Finiteness", "Is it finite?", "This would give a bound."))
+        self.assertNotIn("Details stay on GitHub.", json.dumps(q))
+        old = build.item(issue(9, "question", "### Question\n\nIs it bounded?\n\n### Motivation\n\nA legacy motivation."))
+        self.assertEqual(old["motivation"], "A legacy motivation.")
+        self.assertEqual(build.item(ISSUES[1])["motivation"], "")
+
     def test_forms_become_questions_and_claims(self):
         e = build.entry("Lab/primes", GOOD, ISSUES)
         self.assertEqual([(q["number"], q["text"], q["parents"], q["status"]) for q in e["questions"]],

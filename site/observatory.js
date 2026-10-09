@@ -187,9 +187,9 @@ const Observatory = (() => {
     const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
     return hours < 24 ? rtf.format(-Math.max(hours, 0), "hour") : rtf.format(-days, "day");
   }
-  const meter = (s) => h("span", { class: "meter", title: `${s.answered} of ${s.questions} questions answered` },
+  const meter = (s) => h("span", { class: "meter", title: `${s.answered} of ${s.questions} problems answered` },
     h("span", { class: "bar" }, h("span", { style: `width:${Math.round(100 * (s.questions ? s.answered / s.questions : 0))}%` })),
-    `${s.answered} of ${plural(s.questions, "question")} answered`);
+    `${s.answered} of ${plural(s.questions, "problem")} answered`);
 
   async function index() {
     // The query string holds the search, so that a filtered index can be linked to and survives the back button.
@@ -369,8 +369,12 @@ const Observatory = (() => {
       if (seen.has(q.number)) return h("li", { class: "q note" }, `(see #${q.number} above)`);
       seen.add(q.number);
       const li = h("li", { class: "q", "data-status": q.status },
-        h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" }, paragraphs(q.text)), chip(q.status)),
+        h("div", { class: "q-line" }, mark(q.status), h("div", { class: "q-text" },
+          h("h3", { class: "q-title" }, rich(q.title || q.text)),
+          q.title && q.text !== q.title ? h("div", { class: "q-statement" }, paragraphs(q.text)) : null,
+          q.motivation ? h("div", { class: "q-motivation" }, paragraphs(q.motivation)) : null), chip(q.status)),
         h("div", { class: "q-meta" }, by(q),
+          safe(q.url) && h("a", { href: q.url }, "Details and discussion ↗"),
           github && h("a", { href: form("claim.yml", { answers: `#${q.number}` }) }, "Answer it")),
         (answers[q.number] || []).length ? h("div", { class: "answers" }, answers[q.number].map((c) =>
           h("div", { class: "answer" }, h("span", { class: "text" }, rich(c.text)), h("span", { class: "note" }, by(c))))) : null);
@@ -392,8 +396,8 @@ const Observatory = (() => {
       [["", "All"], ["open", "Open"], ["answered", "Answered"]].map(([v, label]) => h("button", { type: "button", class: "chip", "aria-pressed": String(!v),
         onclick: (ev) => { only(v); for (const b of ev.target.parentNode.children) b.setAttribute("aria-pressed", String(b === ev.target)); } }, label))) : null;
     const tree = h("section", { id: "questions" },
-      h("h2", {}, "Questions", h("small", {}, `${open} open · ${s.answered} answered`)),
-      filter, treeList || h("p", { class: "note" }, "No questions yet. Pose the first subquestion."));
+      h("h2", {}, "Problems", h("small", {}, `${open} open · ${s.answered} answered`)),
+      filter, treeList || h("p", { class: "note" }, "No problems yet. Pose the first problem."));
 
     const list = (id, title, items, row, none) => h("section", { id }, h("h2", {}, title, h("small", {}, plural(items.length, "claim"))),
       items.length ? h("ul", { class: "list" }, items.map(row)) : h("p", { class: "note" }, none));
@@ -408,19 +412,19 @@ const Observatory = (() => {
       : "No claims yet. A failed approach is worth recording too: it saves the next person the trouble.");
 
     const stats = h("div", {},
-      h("div", { class: "stats" }, [[s.questions, "question"], [s.claims, "claim"], [s.contributors, "contributor"]]
+      h("div", { class: "stats" }, [[s.questions, "problem"], [s.claims, "claim"], [s.contributors, "contributor"]]
         .map(([n, word]) => h("div", { class: "stat" }, h("b", {}, n), h("span", {}, noun(n, word))))),
       h("div", { class: "progress" }, meter(s)));
     const side = h("aside", {}, h("div", { class: "side" },
       stats,
       github && h("div", { class: "actions" },
-        a.kind !== "closed-agenda" && h("a", { class: "button primary", href: form("question.yml", {}) }, "Pose a question"),
+        a.kind !== "closed-agenda" && h("a", { class: "button primary", href: form("problem.yml", {}) }, "Pose a problem"),
         h("a", { class: "button", href: form("claim.yml", {}) }, "Record a claim"),
         h("a", { class: "button", href: github }, "Repository ↗")),
       h("div", { class: "who" }, h("span", { class: "contents-title" }, "Maintained by"), a.maintainers.map((m, i) => [i ? ", " : "",
         github ? h("a", { href: `https://github.com/${m}` }, m) : m])),
       h("nav", { class: "contents", "aria-label": "On this page" }, h("span", { class: "contents-title" }, "On this page"),
-        h("ol", {}, [["agenda", "The agenda", ""], ["questions", "Questions", s.questions], ["claims", "Claims", loose.length]]
+        h("ol", {}, [["agenda", "The agenda", ""], ["questions", "Problems", s.questions], ["claims", "Claims", loose.length]]
           .map(([id, label, n]) => h("li", {}, h("a", { href: `#${id}` }, label, n === "" ? null : h("small", {}, n))))))));
 
     return [head, h("div", { class: "layout" }, side,

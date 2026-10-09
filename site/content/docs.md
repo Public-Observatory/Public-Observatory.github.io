@@ -6,7 +6,7 @@ The Public Observatory is built to coordinate research efforts within mathematic
 
 ## Ask a question
 
-You can open an issue using the **Question** form, suggest a smaller question within a larger one, or help clarify an existing question in the comments. A little context about why it matters helps others find a way in. Tentative questions are welcome.
+You can open an issue using the **Problem** form, suggest a smaller question within a larger one, or help clarify an existing question in the comments. Give it a short, descriptive title and a one-sentence statement; motivation and further details are optional. Tentative questions are welcome.
 
 ## Share a result
 

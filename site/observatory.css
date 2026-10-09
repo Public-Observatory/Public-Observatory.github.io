@@ -285,8 +285,9 @@ ul.tree ul .q { padding: 12px 0 2px; }
 .q-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .q-text p { margin: 0 0 8px; }
 .q-text p:last-child { margin-bottom: 0; }
-.q-text p:first-child { font-weight: 500; color: var(--ink); }
-.q-text p + p { color: var(--muted); font-size: 0.96rem; }
+.q-title { margin: 0; font-size: 1.15rem; line-height: 1.45; color: var(--ink); }
+.q-statement { margin-top: 8px; color: var(--ink); }
+.q-motivation { margin-top: 8px; color: var(--muted); font-size: 0.96rem; }
 .q-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; font-family: var(--sans); font-size: 0.78rem; color: var(--muted); margin: 6px 0 0 32px; }
 .q-meta a { color: var(--muted); }
 .q-meta a:hover { color: var(--accent); }

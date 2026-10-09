@@ -5,7 +5,7 @@ const { resolve } = require('node:path');
 const { runInContext } = require('node:vm');
 const { JSDOM } = require('jsdom');
 
-async function render(text) {
+async function render(text, questions = []) {
   const dom = new JSDOM('<main id="main"></main>', {
     url: 'https://observatory.example/agenda.html?repo=Lab/relu-fibres',
     runScripts: 'outside-only',
@@ -13,8 +13,8 @@ async function render(text) {
   const entry = {
     repo: 'Lab/relu-fibres', url: 'https://github.com/Lab/relu-fibres',
     agenda: { title: 'Fibres', kind: 'open-agenda', question: '', summary: '', maintainers: [] },
-    summary: { questions: 0, answered: 0, claims: 0, contributors: 0 },
-    questions: [], claims: [],
+    summary: { questions: questions.length, answered: 0, claims: 0, contributors: 0 },
+    questions, claims: [],
     readme: {
       text,
       url: 'https://github.com/Lab/relu-fibres/blob/main/docs/README.md',
@@ -31,6 +31,26 @@ async function render(text) {
   }
   return dom;
 }
+
+test('problems show title, statement and optional motivation without field headings', async () => {
+  const base = { parents: [], status: 'open', author: 'alice', created: '' };
+  const dom = await render('', [
+    { ...base, number: 1, title: 'Finiteness', text: 'Is $X$ finite?', motivation: 'A bound would follow.', url: 'https://github.com/Lab/relu-fibres/issues/1' },
+    { ...base, number: 2, title: 'Title only', text: 'Title only', motivation: '', url: '' },
+    { ...base, number: 3, text: 'Legacy cached statement', url: '' },
+  ]);
+  try {
+    const doc = dom.window.document;
+    const rows = doc.querySelectorAll('.q');
+    assert.equal(rows[0].querySelector('.q-title').textContent, 'Finiteness');
+    assert.equal(rows[0].querySelector('.q-statement').textContent, 'Is $X$ finite?');
+    assert.equal(rows[0].querySelector('.q-motivation').textContent, 'A bound would follow.');
+    assert.equal(rows[0].querySelectorAll('h3').length, 1);
+    assert.equal([...rows[0].querySelectorAll('a')].find(a => a.textContent.startsWith('Details')).href, 'https://github.com/Lab/relu-fibres/issues/1');
+    assert.equal(rows[1].querySelector('.q-statement, .q-motivation'), null);
+    assert.equal(rows[2].querySelector('.q-title').textContent, 'Legacy cached statement');
+  } finally { dom.window.close(); }
+});
 
 test('GitHub footnotes render as references with local citations and return links', async () => {
   const dom = await render(`# Fibres

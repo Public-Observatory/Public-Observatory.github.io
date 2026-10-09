@@ -29,7 +29,7 @@
   --head-ink: #f3ecdc;          /* text on a head */
   --head-muted: rgba(243, 236, 220, 0.72);
   --head-link: #a5b8ec;         /* links and labels on the landing-page head */
-  --head-gold: #d9b86c;         /* details on an agenda head: badge, breadcrumb, links, question bar */
+  --head-gold: #d9b86c;         /* details on an agenda head: badge, links, question bar */
 
   /* Landing-page head: a night sky, top to bottom, with stars on top. */
   --sky-top: #05070f;
@@ -78,7 +78,7 @@ code, .id { font-family: var(--mono); font-size: 0.84em; }
 .skip:focus { left: 16px; top: 12px; z-index: 50; background: var(--surface); padding: 6px 10px; }
 
 /* Monospaced capitals mark everything that is apparatus rather than text. */
-.label, .badge, .entry-kind, .entry-no, .section-head small, .contents-title, .crumbs, section h2 small, .status, nav.site, .chip, .menu-button {
+.label, .badge, .entry-kind, .entry-no, .section-head small, .contents-title, section h2 small, .status, nav.site, .chip, .menu-button {
   font-family: var(--mono); font-size: 0.7rem; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
 }
 
@@ -191,7 +191,7 @@ select { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 0; bac
 
 .badge { color: var(--ink); }
 .hero .badge { color: var(--head-link); }
-.agenda-head .badge, .agenda-head .crumbs, .agenda-head .crumbs a { color: var(--head-gold); }
+.agenda-head .badge { color: var(--head-gold); }
 .bar { display: inline-block; width: 64px; height: 4px; background: var(--rule); overflow: hidden; vertical-align: middle; }
 .bar > span { display: block; height: 100%; background: var(--good); }
 
@@ -200,8 +200,6 @@ select { padding: 7px 10px; border: 1px solid var(--rule); border-radius: 0; bac
 /* ==========================================================================
    6. An agenda page
    ========================================================================== */
-.crumbs { margin-bottom: 26px; }
-.crumbs a:hover { text-decoration: none; opacity: 0.8; }
 .agenda-head { padding: 28px 0 52px; margin-bottom: 36px; }
 .agenda-head h1 { font-family: var(--display); font-weight: 400; font-size: clamp(2rem, 4.8vw, 3rem); line-height: 1.12; letter-spacing: -0.01em; margin: 10px 0 18px; max-width: 24ch; text-wrap: balance; }
 .agenda-head .question { font-size: 1.12rem; line-height: 1.6; font-weight: 500; margin: 0 0 16px; max-width: 64ch; padding-left: 18px; border-left: 2px solid var(--head-gold); }

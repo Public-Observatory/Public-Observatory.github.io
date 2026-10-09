@@ -356,7 +356,6 @@ const Observatory = (() => {
     const by = (i) => h("span", {}, i.author, " · ", link(i), i.created ? ` · ${ago(i.created)}` : "");
 
     const head = h("header", { class: "agenda-head" },
-      h("div", { class: "crumbs" }, h("a", { href: "./" }, "← All agendas")),
       h("span", { class: "badge" }, KIND[a.kind] || a.kind),
       h("h1", {}, a.title),
       h("p", { class: "question" }, rich(a.question)),

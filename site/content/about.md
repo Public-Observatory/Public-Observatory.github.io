@@ -14,6 +14,8 @@ Each agenda lives in a GitHub repository. Questions and claims are issues, where
 
 [Browse the agendas](./) and take up a question or check a claim. The [contribution guide](docs.html) explains the workflow and how to pose a new agenda.
 
-## Who we are
+## Next steps
 
-This site is maintained by Isabel Dahlgren; comments and suggestions go to [isabelda@kth.se](mailto:isabelda@kth.se). We are currently looking for an advisory board.
+Good research agendas are scarce, and writing one well takes sustained effort. We are seeking funding so that people can be paid to write and maintain good agendas, and to review the solutions that others submit. We are also looking for an advisory board.
+
+This site is maintained by Isabel Dahlgren; comments, suggestions and offers of support go to [isabelda@kth.se](mailto:isabelda@kth.se).

@@ -2,6 +2,8 @@
 
 The Public Observatory is built to coordinate research efforts within mathematics. Ask questions, share results or help check the work. You can join in at any point.
 
+We are seeking funding so that, in future, people are paid to write and maintain good agendas.
+
 [Browse the agendas](./) and follow one to its GitHub repository. Its README introduces the research, and its **Issues** tab holds questions, claims and discussion. A free GitHub account and a browser are enough to take part.
 
 ## Ask a question

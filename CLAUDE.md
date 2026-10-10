@@ -6,32 +6,39 @@ This repository is `Public-Observatory/Public-Observatory.github.io` on GitHub: 
 
 ```sh
 python3 -m unittest discover -s tests                     # all tests, under a second
+npm ci --ignore-scripts && npm test                       # Markdown rendering tests; Node.js 24+
 python3 site/build.py local OUT DIR...                    # build an index from local agenda directories
+python3 -m http.server -d site                            # preview the page text; agenda cards need a built index
 uv run --no-project --python 3.10 python -m unittest discover -s tests   # the oldest supported Python
 ```
 
 ## Layout
 
 - `site/agenda.py`: the schema of `agenda.json` and `check`, which each agenda's pull requests run.
-- `site/build.py`: builds `agendas.json` from GitHub (repositories with the topic `observatory-agenda`, their `agenda.json` and issues) or from local directories. Network access goes through an injectable `get`, so tests use a dict.
-- `site/*.html`, `observatory.js`, `observatory.css`: the static pages, which render `agendas.json` and compute nothing the index does not say.
-- `agenda-template/`: a new agenda's repository, published as the template repository `Public-Observatory/agenda-template`. Its issue forms' headings are what `build.fields` parses; change both together.
-- `tests/test_site.py`: the schema, issues read as questions and claims, and both ways of building the index.
+- `site/build.py`: builds `agendas.json` from GitHub (repositories with the topic `observatory-agenda`, their `agenda.json`, README and issues) or from local directories. Network access goes through an injectable `get`, so tests use a dict.
+- `site/*.html`, `observatory.js`, `observatory.css`: the static pages, which render `agendas.json` and compute nothing the index does not say. Layout, navigation and page titles live in the HTML.
+- `site/content/*.md`: the prose of the home, About and Docs pages, loaded by the pages as Markdown. Edit the text here, not in the HTML.
+- `site/marked.js`, `marked-footnote.js`, `purify.js`: vendored Markdown renderer and sanitiser, with their licences in the files. Do not edit them; update by replacing the file and the version in `README.md`.
+- `agenda-template/`: a new agenda's repository, published as the template repository `Public-Observatory/agenda-template`. Its issue forms (Problem, Claim) have headings that `build.fields` parses; change both together.
+- `agendas/`: example agendas for local previews and tests.
+- `tests/test_site.py`, `tests/markdown.test.cjs`: the schema, issues read as problems and claims, both ways of building the index, and the rendering of Markdown.
 
 ## Invariants
 
 - Git and GitHub are the only infrastructure: no server, no database, no hosted service of our own. The website is static.
 - One broken agenda never takes the index down: it is skipped and reported.
-- Text from issues and agenda files is untrusted. The pages insert it only as text, never as HTML, and follow only `https://` links from it. Mathematics in it, written in LaTeX between `$...$` or `$$...$$`, is typeset by KaTeX from cdnjs, with `trust` off; without KaTeX the LaTeX is shown as written.
-- Standard library only, Python 3.10+, and no build step for the pages.
+- Text from issues, READMEs and agenda files is untrusted. The pages insert it only as text or as sanitised Markdown, never as raw HTML, and follow only `https://` links from it. Mathematics in it, written in LaTeX between `$...$` or `$$...$$`, is typeset by KaTeX from cdnjs, with `trust` off; without KaTeX the LaTeX is shown as written.
+- Python is standard library only, 3.10+. The pages have no build step; Node is used only to test them.
 - Fonts (Baskervville for headings, Open Sans for text, IBM Plex Mono for labels) come from Google Fonts; without them the pages fall back to system fonts. The night sky of the page heads is drawn in CSS, with no images.
 
 ## Style
 
 - Terse code with docstrings that explain why, not what. Match the surrounding density.
-- Prose (README, docstrings, the website, the template) should read like a top mathematical journal: precise, plain, grammatical, no hype.
-- Any LaTeX source goes on one line per paragraph.
+- Prose (README, VISION, docstrings, the website, the template) should read like a top mathematical journal: precise, plain, grammatical, no hype.
+- Any LaTeX source goes on one line per paragraph, and so does Markdown prose.
 
 ## Direction
 
 The stages in `VISION.md` are the roadmap. The present design keeps the state of a claim in issue labels set by maintainers; stage 3 replaces that with a record that checks itself, and should be built only once agendas have outgrown labels.
+
+Work on `main` directly: commit and push there.

@@ -4,7 +4,7 @@ A public index of research agendas: questions, with their motivation and their d
 
 ## How it works
 
-**An agenda is a git repository.** It holds `agenda.json`, which states the agenda's title, kind, root question, summary and maintainers, and a README giving its motivation, scope and standard of evidence. A new agenda is created from the template repository `Public-Observatory/agenda-template`, whose contents are `agenda-template/` here.
+**An agenda is a git repository.** It holds `agenda.json`, which states the agenda's title, kind, root question, summary and maintainers, and a README giving its motivation, scope and standard of evidence. A new agenda inherits the separate [agenda template repository](https://github.com/public-observatory/agenda-template), including its issue forms and validation workflow.
 
 **Questions and claims are issues.** Each agenda has two issue forms, kept short: a question is stated in one field, a claim in the title, and everything else is optional. A claim names the questions it answers, by issue number; an approach that did not work is recorded as a claim too. Code, data and proofs arrive as pull requests that the claim links to.
 
@@ -18,8 +18,6 @@ A public index of research agendas: questions, with their motivation and their d
 VISION.md          what the Observatory is for
 site/              the website: index.html, agenda.html, observatory.js and .css;
                    build.py builds agendas.json; agenda.py checks an agenda.json
-agenda-template/   a new agenda's repository: agenda.json, README, issue forms, and a
-                   workflow that checks agenda.json on every pull request
 tests/             tests of site/agenda.py and site/build.py
 ```
 
@@ -36,7 +34,7 @@ Page layout, navigation, browser titles and search descriptions remain in the HT
 ```sh
 python3 -m unittest discover -s tests                          # the tests; standard library only, Python 3.10+
 npm ci --ignore-scripts && npm test                           # Markdown rendering tests; Node.js 24+
-python3 site/agenda.py check agenda-template/agenda.json       # exit 1, with the reasons, if malformed
+python3 site/agenda.py check /path/to/agenda/agenda.json       # exit 1, with the reasons, if malformed
 mkdir -p _site && cp site/*.html site/*.css site/*.js _site/
 cp -R site/content _site/
 python3 site/build.py local _site DIR...                       # index agendas in local directories, for a preview

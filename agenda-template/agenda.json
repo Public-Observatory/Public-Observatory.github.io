@@ -1,9 +1,0 @@
-{
-  "title": "Title of the agenda",
-  "kind": "open-agenda",
-  "question": "The question every other question in this agenda helps to settle?",
-  "created": "2026-10-07T00:00:00Z",
-  "summary": "Why the question matters, what is known, and what would count as progress, in one paragraph.",
-  "maintainers": ["your-github-login"],
-  "tags": []
-}
